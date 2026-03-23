@@ -6,7 +6,8 @@ import os
 
 load_dotenv(override=False)
 
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://user:password@localhost:5432/kids_db")
+DATABASE_URL = os.getenv("DATABASE_URL", "NESSUNA_URL_TROVATA")
+print(f"=== DATABASE_URL: {DATABASE_URL[:30]}... ===")
 
 # Railway dà postgres:// ma SQLAlchemy 2.0 vuole postgresql://
 if DATABASE_URL.startswith("postgres://"):
