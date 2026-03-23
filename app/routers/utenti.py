@@ -40,6 +40,20 @@ def get_richieste_ricevute(
         "creato_at": r.creato_at,
     } for r in richieste]
 
+# ============================================================
+# I MIEI AMICI (SEGUITI)
+# ============================================================
+@router.get("/me/seguiti", response_model=List[UtenteResponse])
+def get_miei_seguiti(
+    db: Session = Depends(get_db),
+    me: Utente = Depends(get_utente_corrente)
+):
+    """Lista degli utenti seguiti dall'utente corrente."""
+    # Estraiamo gli utenti veri e propri dalle relazioni di follow
+    utenti_seguiti = [follow.seguito for follow in me.seguiti_rel]
+    
+    # Li formattiamo correttamente usando la tua funzione
+    return [_utente_response(u, db) for u in utenti_seguiti]
 
 @router.get("/{username}", response_model=UtenteResponse)
 def get_profilo(username: str, db: Session = Depends(get_db),
