@@ -155,16 +155,30 @@ class Sfida(Base):
     durata_ore = Column(Integer, nullable=False)
     scadenza = Column(DateTime(timezone=True), nullable=False)
     vincitore_id = Column(Integer, ForeignKey("utenti.id"), nullable=True)
+    visibilita = Column(String(20), default="tutti")  # "tutti" o "selezionati"
     creato_at = Column(DateTime(timezone=True), server_default=func.now())
 
     autore = relationship("Utente", foreign_keys=[autore_id], back_populates="sfide_create")
     vincitore = relationship("Utente", foreign_keys=[vincitore_id])
     partecipazioni = relationship("PartecipazioneSfida", back_populates="sfida", cascade="all, delete")
+    inviti = relationship("InvitoSfida", back_populates="sfida", cascade="all, delete")
 
     @property
     def is_scaduta(self):
         from datetime import datetime, timezone
         return datetime.now(timezone.utc) > self.scadenza.replace(tzinfo=timezone.utc)
+
+
+class InvitoSfida(Base):
+    __tablename__ = "inviti_sfida"
+
+    id = Column(Integer, primary_key=True)
+    sfida_id = Column(Integer, ForeignKey("sfide.id"), nullable=False)
+    invitato_id = Column(Integer, ForeignKey("utenti.id"), nullable=False)
+    creato_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    sfida = relationship("Sfida", back_populates="inviti")
+    invitato = relationship("Utente")
 
 
 class PartecipazioneSfida(Base):
@@ -254,7 +268,7 @@ class RichiestaFollow(Base):
     id = Column(Integer, primary_key=True, index=True)
     richiedente_id = Column(Integer, ForeignKey("utenti.id"), nullable=False)
     destinatario_id = Column(Integer, ForeignKey("utenti.id"), nullable=False)
-    stato = Column(String(20), default="in_attesa")  # in_attesa, accettata, rifiutata
+    stato = Column(String(20), default="in_attesa")
     creato_at = Column(DateTime(timezone=True), server_default=func.now())
 
     richiedente = relationship("Utente", foreign_keys=[richiedente_id])

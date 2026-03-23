@@ -387,7 +387,7 @@ def _commento_response(c: Commento, db: Session) -> CommentoResponse:
         autore=_utente_response(c.autore, db),
         testo=c.testo,
         risposta_a_id=c.risposta_a_id,
-        risposte=[_commento_response(r, db) for r in c.risposte],
+        risposte=[_commento_response(r, db) for r in (c.risposte or [])],
         creato_at=c.creato_at,
     )
 

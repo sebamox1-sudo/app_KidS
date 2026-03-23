@@ -22,7 +22,7 @@ class RegistrazioneRequest(BaseModel):
             raise ValueError("Username troppo lungo (max 30 caratteri)")
         if not re.match(r'^[a-z0-9_.]+$', v):
             raise ValueError("Username può contenere solo lettere, numeri, _ e .")
-        return v  # SENZA @
+        return v
 
     @field_validator("password")
     @classmethod
@@ -168,11 +168,13 @@ class SondaggioResponse(BaseModel):
 
 
 # ============================================================
-# SFIDA
+# SFIDA — con visibilità e lista amici
 # ============================================================
 class SfidaRequest(BaseModel):
     tema: str
     durata_ore: int
+    visibilita: str = "tutti"  # "tutti" o "selezionati"
+    amici_usernames: List[str] = []  # username degli amici invitati
 
     @field_validator("durata_ore")
     @classmethod
@@ -180,6 +182,18 @@ class SfidaRequest(BaseModel):
         if v not in [1, 6, 12, 24]:
             raise ValueError("Durata deve essere 1, 6, 12 o 24 ore")
         return v
+
+    @field_validator("visibilita")
+    @classmethod
+    def visibilita_valida(cls, v):
+        if v not in ["tutti", "selezionati"]:
+            raise ValueError("Visibilità deve essere 'tutti' o 'selezionati'")
+        return v
+
+    @field_validator("amici_usernames")
+    @classmethod
+    def amici_validi(cls, v):
+        return [u.strip().lstrip("@").lower() for u in v if u.strip()]
 
 
 class SfidaResponse(BaseModel):
@@ -189,9 +203,12 @@ class SfidaResponse(BaseModel):
     durata_ore: int
     scadenza: datetime
     is_scaduta: bool
+    visibilita: str = "tutti"
     vincitore: Optional[UtenteResponse]
     num_partecipanti: int
     ho_partecipato: bool = False
+    sono_invitato: bool = False  # true se l'utente corrente è tra gli invitati
+    invitati: List[UtenteResponse] = []
     creato_at: datetime
 
     model_config = {"from_attributes": True}

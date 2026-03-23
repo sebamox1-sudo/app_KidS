@@ -4,7 +4,10 @@ from sqlalchemy import func
 from typing import List, Optional
 from datetime import datetime, timezone, timedelta
 from app.database import get_db
-from app.models.modelli import Sfida, PartecipazioneSfida, VotoSfida, Notifica, Utente
+from app.models.modelli import (
+    Sfida, PartecipazioneSfida, VotoSfida, InvitoSfida,
+    Notifica, Utente, Follow,
+)
 from app.schemas.schemi import SfidaRequest, SfidaResponse
 from app.dependencies import get_utente_corrente
 from app.routers.auth import _utente_response
@@ -14,21 +17,56 @@ router = APIRouter(prefix="/sfide", tags=["Sfide"])
 UPLOAD_DIR = os.getenv("UPLOAD_DIR", "uploads")
 
 
+# ============================================================
+# SFIDA ATTIVA — mostra solo sfide visibili all'utente
+# ============================================================
 @router.get("/attiva", response_model=Optional[SfidaResponse])
 def get_sfida_attiva(
     db: Session = Depends(get_db),
     me: Utente = Depends(get_utente_corrente)
 ):
     ora = datetime.now(timezone.utc)
-    sfida = db.query(Sfida).filter(
+    sfide = db.query(Sfida).filter(
         Sfida.scadenza > ora
-    ).order_by(Sfida.creato_at.desc()).first()
+    ).order_by(Sfida.creato_at.desc()).all()
 
-    if not sfida:
-        return None
-    return _sfida_response(sfida, me.id, db)
+    for sfida in sfide:
+        if _utente_puo_vedere(sfida, me, db):
+            return _sfida_response(sfida, me.id, db)
+
+    return None
 
 
+# ============================================================
+# LE MIE SFIDE — create da me o dove sono invitato
+# ============================================================
+@router.get("/mie", response_model=List[SfidaResponse])
+def get_mie_sfide(
+    db: Session = Depends(get_db),
+    me: Utente = Depends(get_utente_corrente)
+):
+    ora = datetime.now(timezone.utc)
+
+    mie = db.query(Sfida).filter(
+        Sfida.autore_id == me.id,
+        Sfida.scadenza > ora,
+    ).all()
+
+    inviti_ids = [i.sfida_id for i in db.query(InvitoSfida.sfida_id).filter(
+        InvitoSfida.invitato_id == me.id
+    ).all()]
+    invitate = db.query(Sfida).filter(
+        Sfida.id.in_(inviti_ids),
+        Sfida.scadenza > ora,
+    ).all() if inviti_ids else []
+
+    tutte = {s.id: s for s in mie + invitate}
+    return [_sfida_response(s, me.id, db) for s in tutte.values()]
+
+
+# ============================================================
+# CREA SFIDA — con visibilità tutti/selezionati
+# ============================================================
 @router.post("/", response_model=SfidaResponse, status_code=201)
 def crea_sfida(
     dati: SfidaRequest,
@@ -36,28 +74,62 @@ def crea_sfida(
     me: Utente = Depends(get_utente_corrente)
 ):
     ora = datetime.now(timezone.utc)
+
     sfida = Sfida(
         autore_id=me.id,
         tema=dati.tema,
         durata_ore=dati.durata_ore,
         scadenza=ora + timedelta(hours=dati.durata_ore),
+        visibilita=dati.visibilita,
     )
     db.add(sfida)
+    db.flush()
 
-    # Notifica a tutti i follower
-    for follow in me.follower_rel:
-        db.add(Notifica(
-            destinatario_id=follow.follower_id,
-            mittente_id=me.id,
-            tipo="sfida",
-            testo=f"{me.nome} ha lanciato una sfida: {dati.tema} ⚡",
-        ))
+    if dati.visibilita == "selezionati" and dati.amici_usernames:
+        # ── SFIDA PRIVATA: invita solo gli amici scelti ──
+        amici_invitati = db.query(Utente).filter(
+            Utente.username.in_(dati.amici_usernames)
+        ).all()
+
+        for amico in amici_invitati:
+            if amico.id == me.id:
+                continue
+
+            db.add(InvitoSfida(
+                sfida_id=sfida.id,
+                invitato_id=amico.id,
+            ))
+
+            db.add(Notifica(
+                destinatario_id=amico.id,
+                mittente_id=me.id,
+                tipo="sfida",
+                testo=f"{me.nome} ti ha sfidato: {dati.tema} ⚡",
+            ))
+
+        if not amici_invitati:
+            raise HTTPException(
+                status_code=400,
+                detail="Nessun amico trovato con gli username forniti"
+            )
+    else:
+        # ── SFIDA PUBBLICA: notifica tutti i follower ──
+        for follow in me.follower_rel:
+            db.add(Notifica(
+                destinatario_id=follow.follower_id,
+                mittente_id=me.id,
+                tipo="sfida",
+                testo=f"{me.nome} ha lanciato una sfida: {dati.tema} ⚡",
+            ))
 
     db.commit()
     db.refresh(sfida)
     return _sfida_response(sfida, me.id, db)
 
 
+# ============================================================
+# PARTECIPA — con controllo visibilità
+# ============================================================
 @router.post("/{sfida_id}/partecipa", status_code=201)
 async def partecipa_sfida(
     sfida_id: int,
@@ -70,8 +142,16 @@ async def partecipa_sfida(
         raise HTTPException(status_code=404, detail="Sfida non trovata")
     if sfida.is_scaduta:
         raise HTTPException(status_code=400, detail="Sfida scaduta")
+    if not _utente_puo_vedere(sfida, me, db):
+        raise HTTPException(status_code=403, detail="Non sei invitato a questa sfida")
 
-    # Salva foto
+    gia = db.query(PartecipazioneSfida).filter(
+        PartecipazioneSfida.sfida_id == sfida_id,
+        PartecipazioneSfida.utente_id == me.id,
+    ).first()
+    if gia:
+        raise HTTPException(status_code=400, detail="Hai già partecipato")
+
     os.makedirs(f"{UPLOAD_DIR}/sfide", exist_ok=True)
     ext = foto.filename.split(".")[-1]
     nome = f"{uuid.uuid4()}.{ext}"
@@ -85,10 +165,22 @@ async def partecipa_sfida(
         foto_url=f"/uploads/sfide/{nome}",
     )
     db.add(partecipazione)
+
+    if sfida.autore_id != me.id:
+        db.add(Notifica(
+            destinatario_id=sfida.autore_id,
+            mittente_id=me.id,
+            tipo="sfida",
+            testo=f"{me.nome} ha partecipato alla tua sfida! 📸",
+        ))
+
     db.commit()
     return {"messaggio": "Partecipazione registrata"}
 
 
+# ============================================================
+# PARTECIPAZIONI
+# ============================================================
 @router.get("/{sfida_id}/partecipazioni")
 def get_partecipazioni(
     sfida_id: int,
@@ -98,13 +190,12 @@ def get_partecipazioni(
     sfida = db.query(Sfida).filter(Sfida.id == sfida_id).first()
     if not sfida:
         raise HTTPException(status_code=404, detail="Sfida non trovata")
+    if not _utente_puo_vedere(sfida, me, db):
+        raise HTTPException(status_code=403, detail="Non hai accesso a questa sfida")
 
-    ho_partecipato = any(
-        p.utente_id == me.id for p in sfida.partecipazioni)
+    ho_partecipato = any(p.utente_id == me.id for p in sfida.partecipazioni)
     if not ho_partecipato and sfida.autore_id != me.id:
-        raise HTTPException(
-            status_code=403,
-            detail="Devi partecipare per vedere le foto")
+        raise HTTPException(status_code=403, detail="Devi partecipare per vedere le foto")
 
     return [{
         "id": p.id,
@@ -115,6 +206,9 @@ def get_partecipazioni(
     } for p in sfida.partecipazioni]
 
 
+# ============================================================
+# VOTA
+# ============================================================
 @router.post("/partecipazioni/{partecipazione_id}/vota")
 def vota_partecipazione(
     partecipazione_id: int,
@@ -143,7 +237,31 @@ def vota_partecipazione(
     return {"media_voti": p.media_voti}
 
 
+# ============================================================
+# HELPERS
+# ============================================================
+
+def _utente_puo_vedere(sfida: Sfida, utente: Utente, db: Session) -> bool:
+    if sfida.autore_id == utente.id:
+        return True
+    if sfida.visibilita == "tutti":
+        return True
+    invito = db.query(InvitoSfida).filter(
+        InvitoSfida.sfida_id == sfida.id,
+        InvitoSfida.invitato_id == utente.id,
+    ).first()
+    return invito is not None
+
+
 def _sfida_response(s: Sfida, utente_id: int, db: Session) -> SfidaResponse:
+    invitati = []
+    if s.visibilita == "selezionati":
+        invitati = [_utente_response(inv.invitato, db) for inv in s.inviti]
+
+    sono_invitato = any(
+        inv.invitato_id == utente_id for inv in s.inviti
+    ) if s.visibilita == "selezionati" else False
+
     return SfidaResponse(
         id=s.id,
         autore=_utente_response(s.autore, db),
@@ -151,9 +269,11 @@ def _sfida_response(s: Sfida, utente_id: int, db: Session) -> SfidaResponse:
         durata_ore=s.durata_ore,
         scadenza=s.scadenza,
         is_scaduta=s.is_scaduta,
+        visibilita=s.visibilita,
         vincitore=_utente_response(s.vincitore, db) if s.vincitore else None,
         num_partecipanti=len(s.partecipazioni),
-        ho_partecipato=any(
-            p.utente_id == utente_id for p in s.partecipazioni),
+        ho_partecipato=any(p.utente_id == utente_id for p in s.partecipazioni),
+        sono_invitato=sono_invitato,
+        invitati=invitati,
         creato_at=s.creato_at,
     )

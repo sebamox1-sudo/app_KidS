@@ -17,7 +17,7 @@ def get_classifica(
     me: Utente = Depends(get_utente_corrente)
 ):
     utenti = db.query(Utente).outerjoin(Streak).order_by(
-        case((Streak.giorni != None, Streak.giorni), else_=0).desc()
+        case((Streak.giorni.isnot(None), Streak.giorni), else_=0).desc()
     ).limit(limit).all()
 
     return [{
