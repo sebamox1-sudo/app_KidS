@@ -7,6 +7,7 @@ from app.models.modelli import Sondaggio, VotoSondaggio, Notifica, Utente
 from app.schemas.schemi import SondaggioRequest, SondaggioResponse, VotoSondaggioRequest
 from app.dependencies import get_utente_corrente
 from app.routers.auth import _utente_response
+from collections import defaultdict
 
 router = APIRouter(prefix="/sondaggi", tags=["Sondaggi"])
 
@@ -20,7 +21,24 @@ def get_sondaggi(
     sondaggi = db.query(Sondaggio).order_by(
         Sondaggio.creato_at.desc()
     ).offset(skip).limit(limit).all()
-    return [_sondaggio_response(s, me.id, db) for s in sondaggi]
+
+    if not sondaggi:
+        return []
+    # ── BATCH: Prendi tutti i voti dei sondaggi in UNA sola query ──
+    sondaggi_ids = [s.id for s in sondaggi]
+    tutti_i_voti = db.query(VotoSondaggio).filter(
+        VotoSondaggio.sondaggio_id.in_(sondaggi_ids)
+    ).all()
+    # Raggruppa i voti per sondaggio_id in un dizionario in memoria
+    voti_per_sondaggio = defaultdict(list)
+    for v in tutti_i_voti:
+        voti_per_sondaggio[v.sondaggio_id].append(v)
+    # Usiamo la nuova funzione ottimizzata passando i voti pre-caricati
+
+    return [
+        _sondaggio_response_batch(s, voti_per_sondaggio.get(s.id, []), me.id, db)
+        for s in sondaggi
+    ]
 
 
 @router.post("/", response_model=SondaggioResponse, status_code=201)
@@ -64,7 +82,7 @@ def vota_sondaggio(
         raise HTTPException(status_code=400, detail="Opzione non valida")
 
     voto = VotoSondaggio(
-        utente_id=None if dati.anonimo else me.id,
+        utente_id=me.id,
         sondaggio_id=sondaggio_id,
         opzione_index=dati.opzione_index,
         anonimo=dati.anonimo,
@@ -89,14 +107,20 @@ def vota_sondaggio(
     return {"messaggio": "Voto registrato"}
 
 
-def _sondaggio_response(s: Sondaggio, utente_id: int, db: Session) -> SondaggioResponse:
+def _sondaggio_response_batch(s: Sondaggio, voti_del_sondaggio: list, utente_id: int, db: Session) -> SondaggioResponse:
+    """Risposta per i sondaggi in lista — usa dati pre-caricati in batch (zero query extra)."""
     opzioni = json.loads(s.opzioni)
+    
+    # Calcola i voti scorrendo la lista in memoria (niente lazy loading dal DB)
     voti_per_opzione = [
-        len([v for v in s.voti if v.opzione_index == i])
+        len([v for v in voti_del_sondaggio if v.opzione_index == i])
         for i in range(len(opzioni))
     ]
+    
+    # Cerca il voto dell'utente corrente nella lista in memoria
     mio_voto = next(
-        (v for v in s.voti if v.utente_id == utente_id), None)
+        (v for v in voti_del_sondaggio if v.utente_id == utente_id), None
+    )
 
     return SondaggioResponse(
         id=s.id,
@@ -104,7 +128,7 @@ def _sondaggio_response(s: Sondaggio, utente_id: int, db: Session) -> SondaggioR
         domanda=s.domanda,
         opzioni=opzioni,
         voti_per_opzione=voti_per_opzione,
-        totale_voti=len(s.voti),
+        totale_voti=len(voti_del_sondaggio),
         ho_votato=mio_voto is not None,
         mia_opzione=mio_voto.opzione_index if mio_voto else None,
         creato_at=s.creato_at,
