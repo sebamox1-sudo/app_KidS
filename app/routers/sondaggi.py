@@ -8,6 +8,7 @@ from app.schemas.schemi import SondaggioRequest, SondaggioResponse, VotoSondaggi
 from app.dependencies import get_utente_corrente
 from app.routers.auth import _utente_response
 from collections import defaultdict
+from datetime import datetime, timedelta, timezone
 
 router = APIRouter(prefix="/sondaggi", tags=["Sondaggi"])
 
@@ -18,12 +19,16 @@ def get_sondaggi(
     db: Session = Depends(get_db),
     me: Utente = Depends(get_utente_corrente)
 ):
+    # Calcoliamo esattamente la data e l'ora di 24 ore fa
+    limite_tempo = datetime.now(timezone.utc) - timedelta(hours=24)
+
     # Prendi gli ID delle persone che l'utente segue
     seguiti_ids = [f.seguito_id for f in me.seguiti_rel]
 
     # Filtra i sondaggi: mostra solo quelli degli amici (seguiti) o i propri
     sondaggi = db.query(Sondaggio).filter(
-        (Sondaggio.autore_id.in_(seguiti_ids)) | (Sondaggio.autore_id == me.id)
+        (Sondaggio.autore_id.in_(seguiti_ids)) | (Sondaggio.autore_id == me.id),
+        Sondaggio.creato_at >= limite_tempo
     ).order_by(
         Sondaggio.creato_at.desc()
     ).offset(skip).limit(limit).all()
