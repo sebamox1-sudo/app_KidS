@@ -13,39 +13,38 @@ from datetime import datetime, timedelta, timezone
 router = APIRouter(prefix="/sondaggi", tags=["Sondaggi"])
 
 
+# ============================================================
+# LISTA SONDAGGI — solo quelli non scaduti, degli amici
+# ============================================================
 @router.get("/", response_model=List[SondaggioResponse])
 def get_sondaggi(
     skip: int = 0, limit: int = 20,
     db: Session = Depends(get_db),
     me: Utente = Depends(get_utente_corrente)
 ):
-    # Calcoliamo esattamente la data e l'ora di 24 ore fa
-    limite_tempo = datetime.now(timezone.utc) - timedelta(hours=24)
-
-    # Prendi gli ID delle persone che l'utente segue
+    ora = datetime.now(timezone.utc)
     seguiti_ids = [f.seguito_id for f in me.seguiti_rel]
 
-    # Filtra i sondaggi: mostra solo quelli degli amici (seguiti) o i propri
+    # Mostra solo sondaggi non scaduti degli amici o propri
     sondaggi = db.query(Sondaggio).filter(
         (Sondaggio.autore_id.in_(seguiti_ids)) | (Sondaggio.autore_id == me.id),
-        Sondaggio.creato_at >= limite_tempo
+        Sondaggio.scadenza > ora
     ).order_by(
         Sondaggio.creato_at.desc()
     ).offset(skip).limit(limit).all()
 
     if not sondaggi:
         return []
-    
-    # ── BATCH: Prendi tutti i voti dei sondaggi in UNA sola query ──
+
+    # Batch: prendi tutti i voti in una sola query
     sondaggi_ids = [s.id for s in sondaggi]
     tutti_i_voti = db.query(VotoSondaggio).filter(
         VotoSondaggio.sondaggio_id.in_(sondaggi_ids)
     ).all()
-    # Raggruppa i voti per sondaggio_id in un dizionario in memoria
+
     voti_per_sondaggio = defaultdict(list)
     for v in tutti_i_voti:
         voti_per_sondaggio[v.sondaggio_id].append(v)
-    # Usiamo la nuova funzione ottimizzata passando i voti pre-caricati
 
     return [
         _sondaggio_response_batch(s, voti_per_sondaggio.get(s.id, []), me.id, db)
@@ -53,27 +52,45 @@ def get_sondaggi(
     ]
 
 
+# ============================================================
+# CREA SONDAGGIO — con durata variabile
+# ============================================================
 @router.post("/", response_model=SondaggioResponse, status_code=201)
 def crea_sondaggio(
     dati: SondaggioRequest,
     db: Session = Depends(get_db),
     me: Utente = Depends(get_utente_corrente)
 ):
-    # Calcolo della scadenza basato sulla scelta dell'utente
-    durata = dati.durata_ore if dati.durata_ore else 24
-    scadenza_calcolata = datetime.now(timezone.utc) + timedelta(hours=dati.durata_ore)
+    durata_ore = dati.durata_ore if dati.durata_ore else 24
+    scadenza = datetime.now(timezone.utc) + timedelta(hours=durata_ore)
+
     sondaggio = Sondaggio(
         autore_id=me.id,
         domanda=dati.domanda,
         opzioni=json.dumps(dati.opzioni),
-        scadenza=scadenza_calcolata # Salviamo la data esatta di fine
+        scadenza=scadenza,
     )
     db.add(sondaggio)
+
+    # Notifica follower
+    for follow in me.follower_rel:
+        db.add(Notifica(
+            destinatario_id=follow.follower_id,
+            mittente_id=me.id,
+            tipo="sondaggio",
+            testo=f'{me.nome} ha creato un sondaggio: "{dati.domanda[:40]}"',
+        ))
+
     db.commit()
     db.refresh(sondaggio)
-    return SondaggioResponse(sondaggio, me.id, db)
+
+    # Ritorna il sondaggio creato (nessun voto ancora)
+    return _sondaggio_response_batch(sondaggio, [], me.id, db)
 
 
+# ============================================================
+# VOTA SONDAGGIO
+# ============================================================
 @router.post("/{sondaggio_id}/vota")
 def vota_sondaggio(
     sondaggio_id: int,
@@ -85,6 +102,14 @@ def vota_sondaggio(
         Sondaggio.id == sondaggio_id).first()
     if not sondaggio:
         raise HTTPException(status_code=404, detail="Sondaggio non trovato")
+
+    # Controlla scadenza
+    ora = datetime.now(timezone.utc)
+    scadenza = sondaggio.scadenza
+    if scadenza.tzinfo is None:
+        scadenza = scadenza.replace(tzinfo=timezone.utc)
+    if ora > scadenza:
+        raise HTTPException(status_code=400, detail="Sondaggio scaduto")
 
     esiste = db.query(VotoSondaggio).filter(
         VotoSondaggio.sondaggio_id == sondaggio_id,
@@ -105,10 +130,9 @@ def vota_sondaggio(
     )
     db.add(voto)
 
-    # Notifica autore
     if sondaggio.autore_id != me.id:
         testo = (
-            f"Un utente anonimo ha votato nel tuo sondaggio"
+            "Un utente anonimo ha votato nel tuo sondaggio"
             if dati.anonimo
             else f"{me.nome} ha votato nel tuo sondaggio"
         )
@@ -123,17 +147,22 @@ def vota_sondaggio(
     return {"messaggio": "Voto registrato"}
 
 
-def _sondaggio_response_batch(s: Sondaggio, voti_del_sondaggio: list, utente_id: int, db: Session) -> SondaggioResponse:
-    """Risposta per i sondaggi in lista — usa dati pre-caricati in batch (zero query extra)."""
+# ============================================================
+# HELPER
+# ============================================================
+def _sondaggio_response_batch(
+    s: Sondaggio,
+    voti_del_sondaggio: list,
+    utente_id: int,
+    db: Session,
+) -> SondaggioResponse:
     opzioni = json.loads(s.opzioni)
-    
-    # Calcola i voti scorrendo la lista in memoria (niente lazy loading dal DB)
+
     voti_per_opzione = [
         len([v for v in voti_del_sondaggio if v.opzione_index == i])
         for i in range(len(opzioni))
     ]
-    
-    # Cerca il voto dell'utente corrente nella lista in memoria
+
     mio_voto = next(
         (v for v in voti_del_sondaggio if v.utente_id == utente_id), None
     )
@@ -147,5 +176,6 @@ def _sondaggio_response_batch(s: Sondaggio, voti_del_sondaggio: list, utente_id:
         totale_voti=len(voti_del_sondaggio),
         ho_votato=mio_voto is not None,
         mia_opzione=mio_voto.opzione_index if mio_voto else None,
+        scadenza=s.scadenza,
         creato_at=s.creato_at,
     )

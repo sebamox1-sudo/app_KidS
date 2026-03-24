@@ -132,12 +132,12 @@ class CommentoResponse(BaseModel):
 
 
 # ============================================================
-# SONDAGGIO
+# SONDAGGIO — con durata variabile e scadenza
 # ============================================================
 class SondaggioRequest(BaseModel):
     domanda: str
     opzioni: List[str]
-    durata_ore: Optional[int] = 24
+    durata_ore: int = 24  # default 24h
 
     @field_validator("opzioni")
     @classmethod
@@ -147,6 +147,13 @@ class SondaggioRequest(BaseModel):
         if len(v) > 4:
             raise ValueError("Massimo 4 opzioni")
         return [o.strip() for o in v if o.strip()]
+
+    @field_validator("durata_ore")
+    @classmethod
+    def durata_valida(cls, v):
+        if v not in [1, 6, 12, 24]:
+            raise ValueError("Durata deve essere 1, 6, 12 o 24 ore")
+        return v
 
 
 class VotoSondaggioRequest(BaseModel):
@@ -163,19 +170,20 @@ class SondaggioResponse(BaseModel):
     totale_voti: int
     ho_votato: bool = False
     mia_opzione: Optional[int] = None
+    scadenza: datetime  # AGGIUNTO — quando scade il sondaggio
     creato_at: datetime
 
     model_config = {"from_attributes": True}
 
 
 # ============================================================
-# SFIDA — con visibilità e lista amici
+# SFIDA — con visibilità e lista amici invitati
 # ============================================================
 class SfidaRequest(BaseModel):
     tema: str
     durata_ore: int
-    visibilita: str = "tutti"  # "tutti" o "selezionati"
-    amici_usernames: List[str] = []  # username degli amici invitati
+    visibilita: str = "tutti"
+    amici_invitati: List[str] = []  # username degli amici (allineato con sfide.py)
 
     @field_validator("durata_ore")
     @classmethod
@@ -191,7 +199,7 @@ class SfidaRequest(BaseModel):
             raise ValueError("Visibilità deve essere 'tutti' o 'selezionati'")
         return v
 
-    @field_validator("amici_usernames")
+    @field_validator("amici_invitati")
     @classmethod
     def amici_validi(cls, v):
         return [u.strip().lstrip("@").lower() for u in v if u.strip()]
@@ -208,7 +216,6 @@ class SfidaResponse(BaseModel):
     vincitore: Optional[UtenteResponse]
     num_partecipanti: int
     ho_partecipato: bool = False
-    sono_invitato: bool = False  # true se l'utente corrente è tra gli invitati
     invitati: List[UtenteResponse] = []
     creato_at: datetime
 
