@@ -7,7 +7,6 @@ from app.dependencies import get_utente_corrente
 from app.routers.auth import _utente_response
 import aiofiles, os, uuid
 from typing import List
-from app.models.modelli import Utente, Follow, BadgeUtente, Notifica, RichiestaFollow, Post
 
 router = APIRouter(prefix="/utenti", tags=["Utenti"])
 UPLOAD_DIR = os.getenv("UPLOAD_DIR", "uploads")
@@ -41,55 +40,23 @@ def get_richieste_ricevute(
         "creato_at": r.creato_at,
     } for r in richieste]
 
-# ============================================================
-# I MIEI AMICI (SEGUITI)
-# ============================================================
+
 @router.get("/me/seguiti", response_model=List[UtenteResponse])
 def get_miei_seguiti(
     db: Session = Depends(get_db),
     me: Utente = Depends(get_utente_corrente)
 ):
-    """Lista degli utenti seguiti dall'utente corrente."""
-    # Estraiamo gli utenti veri e propri dalle relazioni di follow
-    utenti_seguiti = [follow.seguito for follow in me.seguiti_rel]
-    
-    # Li formattiamo correttamente usando la tua funzione
-    return [_utente_response(u, db) for u in utenti_seguiti]
+    """Lista utenti che io seguo — usata per selezionare amici nelle sfide."""
+    seguiti_ids = [f.seguito_id for f in me.seguiti_rel]
+    utenti = db.query(Utente).filter(Utente.id.in_(seguiti_ids)).all()
+    return [_utente_response(u, db) for u in utenti]
 
-# Rimuoviamo response_model=UtenteResponse per poter restituire un dizionario arricchito
-@router.get("/{username}")
+
+@router.get("/{username}", response_model=UtenteResponse)
 def get_profilo(username: str, db: Session = Depends(get_db),
                 me: Utente = Depends(get_utente_corrente)):
     utente = _trova_utente(username, db)
-    
-    # 1. Punteggio streak
-    streak_giorni = utente.streak.giorni if utente.streak else 0
-    
-    # 2. Ultimi post (prendiamo solo quelli con foto per la griglia, massimo 15)
-    post_pubblicati = db.query(Post).filter(
-        Post.autore_id == utente.id,
-        Post.foto_principale != None
-    ).order_by(Post.creato_at.desc()).limit(100).all()
-    
-    ultimi_post = [{
-        "id": p.id,
-        "foto_principale": p.foto_principale
-    } for p in post_pubblicati]
-    
-    # 3. Restituiamo il profilo completo!
-    return {
-        "id": utente.id,
-        "nome": utente.nome,
-        "username": utente.username,
-        "bio": utente.bio,
-        "foto_profilo": utente.foto_profilo,
-        "is_privato": utente.is_privato,
-        "num_follower": utente.num_follower,
-        "num_seguiti": utente.num_seguiti,
-        "num_post": len(utente.post), # Conteggio reale di tutti i post
-        "streak_giorni": streak_giorni,
-        "ultimi_post": ultimi_post
-    }
+    return _utente_response(utente, db)
 
 
 # ============================================================
@@ -287,6 +254,22 @@ def rifiuta_richiesta(
     richiesta.stato = "rifiutata"
     db.commit()
     return {"messaggio": "Richiesta rifiutata"}
+
+
+# ============================================================
+# LISTA SEGUITI — amici che seguo (per selettore sfida)
+# ============================================================
+@router.get("/me/seguiti", response_model=List[UtenteResponse])
+def get_miei_seguiti(
+    db: Session = Depends(get_db),
+    me: Utente = Depends(get_utente_corrente)
+):
+    """Lista utenti che seguo — usata nel selettore amici per sfide."""
+    seguiti_ids = [f.seguito_id for f in me.seguiti_rel]
+    if not seguiti_ids:
+        return []
+    utenti = db.query(Utente).filter(Utente.id.in_(seguiti_ids)).all()
+    return [_utente_response(u, db) for u in utenti]
 
 
 # ============================================================

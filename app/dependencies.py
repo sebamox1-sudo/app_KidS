@@ -35,5 +35,12 @@ def get_utente_corrente(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Utente non trovato",
         )
-
+    # --- IL TASTO DI EMERGENZA ---
+    # (Quando aggiungerai is_banned al modello Utente, decommenta queste righe)
+    if utente.is_banned:
+         raise HTTPException(
+             status_code=status.HTTP_403_FORBIDDEN,
+             detail="Questo account è stato sospeso dall'amministratore. 🛑"
+         )
+    # -----------------------------
     return utente

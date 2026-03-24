@@ -27,8 +27,12 @@ class RegistrazioneRequest(BaseModel):
     @field_validator("password")
     @classmethod
     def password_valida(cls, v):
-        if len(v) < 6:
-            raise ValueError("Password troppo corta (min 6 caratteri)")
+        if len(v) < 8:
+            raise ValueError("La password deve avere almeno 8 caratteri 🔒")
+        if not any(char.isdigit() for char in v):
+            raise ValueError("La password deve contenere almeno un numero 🔢")
+        if not any(char.isupper() for char in v):
+            raise ValueError("La password deve contenere almeno una maiuscola 🔠")
         return v
 
 

@@ -16,6 +16,11 @@ class Utente(Base):
     foto_profilo = Column(String(500), nullable=True)
     is_privato = Column(Boolean, default=False)
     onboarding_completato = Column(Boolean, default=False)
+    
+    # --- ECCO IL TASTO DI EMERGENZA ---
+    is_banned = Column(Boolean, default=False)
+    # ----------------------------------
+
     creato_at = Column(DateTime(timezone=True), server_default=func.now())
     aggiornato_at = Column(DateTime(timezone=True), onupdate=func.now())
 
