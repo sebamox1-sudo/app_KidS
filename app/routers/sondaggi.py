@@ -18,12 +18,19 @@ def get_sondaggi(
     db: Session = Depends(get_db),
     me: Utente = Depends(get_utente_corrente)
 ):
-    sondaggi = db.query(Sondaggio).order_by(
+    # Prendi gli ID delle persone che l'utente segue
+    seguiti_ids = [f.seguito_id for f in me.seguiti_rel]
+
+    # Filtra i sondaggi: mostra solo quelli degli amici (seguiti) o i propri
+    sondaggi = db.query(Sondaggio).filter(
+        (Sondaggio.autore_id.in_(seguiti_ids)) | (Sondaggio.autore_id == me.id)
+    ).order_by(
         Sondaggio.creato_at.desc()
     ).offset(skip).limit(limit).all()
 
     if not sondaggi:
         return []
+    
     # ── BATCH: Prendi tutti i voti dei sondaggi in UNA sola query ──
     sondaggi_ids = [s.id for s in sondaggi]
     tutti_i_voti = db.query(VotoSondaggio).filter(
