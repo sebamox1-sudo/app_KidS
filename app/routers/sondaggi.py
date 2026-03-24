@@ -59,15 +59,19 @@ def crea_sondaggio(
     db: Session = Depends(get_db),
     me: Utente = Depends(get_utente_corrente)
 ):
+    # Calcolo della scadenza basato sulla scelta dell'utente
+    durata = dati.durata_ore if dati.durata_ore else 24
+    scadenza_calcolata = datetime.now(timezone.utc) + timedelta(hours=dati.durata_ore)
     sondaggio = Sondaggio(
         autore_id=me.id,
         domanda=dati.domanda,
         opzioni=json.dumps(dati.opzioni),
+        scadenza=scadenza_calcolata # Salviamo la data esatta di fine
     )
     db.add(sondaggio)
     db.commit()
     db.refresh(sondaggio)
-    return _sondaggio_response(sondaggio, me.id, db)
+    return SondaggioResponse(sondaggio, me.id, db)
 
 
 @router.post("/{sondaggio_id}/vota")

@@ -128,9 +128,11 @@ class Sondaggio(Base):
     domanda = Column(String(200), nullable=False)
     opzioni = Column(Text, nullable=False)
     creato_at = Column(DateTime(timezone=True), server_default=func.now())
+    scadenza = Column(DateTime(timezone=True), nullable=False)
 
     autore = relationship("Utente", back_populates="sondaggi")
     voti = relationship("VotoSondaggio", back_populates="sondaggio", cascade="all, delete")
+
 
 
 class VotoSondaggio(Base):

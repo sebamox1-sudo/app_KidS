@@ -137,6 +137,7 @@ class CommentoResponse(BaseModel):
 class SondaggioRequest(BaseModel):
     domanda: str
     opzioni: List[str]
+    durata_ore: Optional[int] = 24
 
     @field_validator("opzioni")
     @classmethod
