@@ -18,29 +18,37 @@ UPLOAD_DIR = os.getenv("UPLOAD_DIR", "uploads")
 
 
 # ============================================================
-# SFIDA ATTIVA — mostra solo sfide visibili all'utente
+# FEED SFIDE — mostra TUTTE le sfide attive tue e dei tuoi amici
 # ============================================================
-@router.get("/attiva", response_model=Optional[SfidaResponse])
-def get_sfida_attiva(
+@router.get("/feed")
+def get_sfide_feed(
     db: Session = Depends(get_db),
     me: Utente = Depends(get_utente_corrente)
 ):
     ora = datetime.now(timezone.utc)
+    # 1. Trova gli ID delle persone che seguo
+    seguiti_ids = [f.seguito_id for f in me.seguiti_rel]
+    # 2. Aggiungi il mio ID (voglio vedere le mie sfide nel feed)
+    autori_validi = seguiti_ids + [me.id]
+    # 3. Prendi tutte le sfide attive create da questi autori
+
     sfide = db.query(Sfida).filter(
+        Sfida.autore_id.in_(autori_validi),
         Sfida.scadenza > ora
     ).order_by(Sfida.creato_at.desc()).all()
-
+    # 4. Filtra ulteriormente per visibilità (se è privata, controlla se sono invitato)
+    sfide_visibili = []
     for sfida in sfide:
         if _utente_puo_vedere(sfida, me, db):
-            return _sfida_response(sfida, me.id, db)
+            sfide_visibili.append(_sfida_response(sfida, me.id, db))
 
-    return None
+    return sfide_visibili
 
 
 # ============================================================
 # LE MIE SFIDE — create da me o dove sono invitato
 # ============================================================
-@router.get("/mie", response_model=List[SfidaResponse])
+@router.get("/mie")
 def get_mie_sfide(
     db: Session = Depends(get_db),
     me: Utente = Depends(get_utente_corrente)
@@ -253,7 +261,7 @@ def _utente_puo_vedere(sfida: Sfida, utente: Utente, db: Session) -> bool:
     return invito is not None
 
 
-def _sfida_response(s: Sfida, utente_id: int, db: Session) -> SfidaResponse:
+def _sfida_response(s: Sfida, utente_id: int, db: Session) -> dict:
     invitati = []
     if s.visibilita == "selezionati":
         invitati = [_utente_response(inv.invitato, db) for inv in s.inviti]
@@ -262,18 +270,35 @@ def _sfida_response(s: Sfida, utente_id: int, db: Session) -> SfidaResponse:
         inv.invitato_id == utente_id for inv in s.inviti
     ) if s.visibilita == "selezionati" else False
 
-    return SfidaResponse(
-        id=s.id,
-        autore=_utente_response(s.autore, db),
-        tema=s.tema,
-        durata_ore=s.durata_ore,
-        scadenza=s.scadenza,
-        is_scaduta=s.is_scaduta,
-        visibilita=s.visibilita,
-        vincitore=_utente_response(s.vincitore, db) if s.vincitore else None,
-        num_partecipanti=len(s.partecipazioni),
-        ho_partecipato=any(p.utente_id == utente_id for p in s.partecipazioni),
-        sono_invitato=sono_invitato,
-        invitati=invitati,
-        creato_at=s.creato_at,
-    )
+    # Prepariamo le partecipazioni da inviare nel feed
+    partecipazioni_list = []
+    for p in s.partecipazioni:
+        partecipazioni_list.append({
+            "id": p.id,
+            "utente": _utente_response(p.utente, db),
+            "foto_url": p.foto_url,
+            "media_voti": p.media_voti,
+            "ho_votato": any(v.votante_id == utente_id for v in p.voti),
+            "creato_at": p.creato_at.isoformat() if p.creato_at else None
+        })
+
+    # Usiamo un dizionario invece di SfidaResponse per poter aggiungere 
+    # dinamicamente il campo partecipazioni
+
+
+    return {
+        "id": s.id,
+        "autore": _utente_response(s.autore, db),
+        "tema": s.tema,
+        "durata_ore": s.durata_ore,
+        "scadenza": s.scadenza,
+        "is_scaduta": s.is_scaduta,
+        "visibilita": s.visibilita,
+        "vincitore": _utente_response(s.vincitore, db) if s.vincitore else None,
+        "num_partecipanti": len(s.partecipazioni),
+        "ho_partecipato": any(p.utente_id == utente_id for p.utente_id in [part.utente_id for part in s.partecipazioni]),
+        "sono_invitato": sono_invitato,
+        "invitati": invitati,
+        "creato_at": s.creato_at,
+        "partecipazioni": partecipazioni_list # <-- Aggiunto!
+    }
