@@ -5,6 +5,12 @@ from app.database import engine, Base
 from app.routers import auth, utenti, post, notifiche, sondaggi, sfide, classifica
 import os
 
+# --- IMPORT PER IL RATE LIMITING ---
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+
+# ----------------------------------------------------
 Base.metadata.create_all(bind=engine)
 
 os.makedirs("uploads/post", exist_ok=True)
