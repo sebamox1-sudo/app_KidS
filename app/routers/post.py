@@ -11,6 +11,12 @@ from app.services.badge_service import verifica_badge
 import aiofiles, os, uuid
 from datetime import datetime, timezone, timedelta
 
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+from fastapi import Request
+
+limiter = Limiter(key_func=get_remote_address)
+
 router = APIRouter(prefix="/post", tags=["Post"])
 UPLOAD_DIR = os.getenv("UPLOAD_DIR", "uploads")
 
@@ -19,7 +25,9 @@ UPLOAD_DIR = os.getenv("UPLOAD_DIR", "uploads")
 # PUBBLICA POST TESTUALE (senza foto obbligatoria)
 # ============================================================
 @router.post("/testo", response_model=PostResponse, status_code=201)
+@limiter.limit("5/minute")
 async def pubblica_post_testuale(
+    request: Request,
     testo: str = Form(...),
     hashtag: str = Form(""),
     db: Session = Depends(get_db),
@@ -267,9 +275,12 @@ def get_commenti(post_id: int, db: Session = Depends(get_db),
 
 
 @router.post("/{post_id}/commenti", response_model=CommentoResponse, status_code=201)
-async def aggiungi_commento(post_id: int, dati: CommentoRequest,
-                       db: Session = Depends(get_db),
-                       me: Utente = Depends(get_utente_corrente)):
+@limiter.limit("10/minute")
+async def aggiungi_commento(
+    request: Request,
+    post_id: int, dati: CommentoRequest,
+    db: Session = Depends(get_db),                   
+    me: Utente = Depends(get_utente_corrente)):
     post = db.query(Post).filter(Post.id == post_id).first()
     if not post:
         raise HTTPException(status_code=404, detail="Post non trovato")

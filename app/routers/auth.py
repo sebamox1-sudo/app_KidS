@@ -7,12 +7,18 @@ from app.schemas.schemi import RegistrazioneRequest, LoginRequest, TokenResponse
 from app.services.auth_service import hash_password, verifica_password, crea_token
 from app.dependencies import get_utente_corrente
 
+from fastapi import APIRouter, Depends, HTTPException, status, Request # <--- Aggiungi Request
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+
+limiter = Limiter(key_func=get_remote_address)  # limitatore per questo modulo
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
 # ============================================================
 # REGISTRAZIONE
 # ============================================================
 @router.post("/registrati", response_model=TokenResponse, status_code=201)
+@limiter.limit("3/hour")
 def registrati(dati: RegistrazioneRequest, db: Session = Depends(get_db)):
     # Controlla email duplicata
     if db.query(Utente).filter(Utente.email == dati.email).first():
@@ -56,6 +62,7 @@ def registrati(dati: RegistrazioneRequest, db: Session = Depends(get_db)):
 # LOGIN
 # ============================================================
 @router.post("/login", response_model=TokenResponse)
+@limiter.limit("5/minute")
 def login(dati: LoginRequest, db: Session = Depends(get_db)):
     utente = db.query(Utente).filter(Utente.email == dati.email).first()
 

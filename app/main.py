@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from app.database import engine, Base
@@ -11,11 +11,18 @@ os.makedirs("uploads/post", exist_ok=True)
 os.makedirs("uploads/profili", exist_ok=True)
 os.makedirs("uploads/sfide", exist_ok=True)
 
+# 1. Inizializza il Limiter
+limiter = Limiter(key_func=get_remote_address)
+
 app = FastAPI(
     title="KidS API",
     description="Backend per l'app social KidS",
     version="1.0.0",
 )
+
+# 2. Collega il Limiter all'app e gestisci l'errore (429 Too Many Requests)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.add_middleware(
     CORSMiddleware,

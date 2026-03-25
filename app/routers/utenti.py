@@ -7,6 +7,12 @@ from app.dependencies import get_utente_corrente
 from app.routers.auth import _utente_response
 import aiofiles, os, uuid
 from typing import List
+ 
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+from fastapi import Request
+
+limiter = Limiter(key_func=get_remote_address)
 
 router = APIRouter(prefix="/utenti", tags=["Utenti"])
 UPLOAD_DIR = os.getenv("UPLOAD_DIR", "uploads")
@@ -282,7 +288,9 @@ def get_seguiti_di_utente(username: str, db: Session = Depends(get_db)):
 # ============================================================
 # RICERCA UTENTI — normalizza input
 # ============================================================
+
 @router.get("/ricerca/{query}", response_model=List[UtenteResponse])
+@limiter.limit("20/minute") # <--- Aggiungi questo decoratore
 def cerca_utenti(query: str, db: Session = Depends(get_db),
                  me: Utente = Depends(get_utente_corrente)):
     # Normalizza: rimuovi @ e spazi
