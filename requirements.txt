@@ -14,4 +14,4 @@ firebase-admin>=6.5.0
 pydantic[email]>=2.9.0
 bcrypt>=4.2.0
 slowapi==0.1.9
-supabase==2.3.7
+supabase
