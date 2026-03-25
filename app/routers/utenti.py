@@ -291,8 +291,10 @@ def get_seguiti_di_utente(username: str, db: Session = Depends(get_db)):
 
 @router.get("/ricerca/{query}", response_model=List[UtenteResponse])
 @limiter.limit("20/minute") # <--- Aggiungi questo decoratore
-def cerca_utenti(query: str, db: Session = Depends(get_db),
-                 me: Utente = Depends(get_utente_corrente)):
+def cerca_utenti(
+    request: Request,
+    query: str, db: Session = Depends(get_db),
+    me: Utente = Depends(get_utente_corrente)):
     # Normalizza: rimuovi @ e spazi
     q = query.strip().lstrip("@")
     if len(q) < 1:

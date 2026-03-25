@@ -19,7 +19,11 @@ router = APIRouter(prefix="/auth", tags=["Auth"])
 # ============================================================
 @router.post("/registrati", response_model=TokenResponse, status_code=201)
 @limiter.limit("3/hour")
-def registrati(dati: RegistrazioneRequest, db: Session = Depends(get_db)):
+def registrati(
+    request: Request,
+    dati: RegistrazioneRequest, 
+    db: Session = Depends(get_db)
+    ):
     # Controlla email duplicata
     if db.query(Utente).filter(Utente.email == dati.email).first():
         raise HTTPException(
@@ -63,7 +67,11 @@ def registrati(dati: RegistrazioneRequest, db: Session = Depends(get_db)):
 # ============================================================
 @router.post("/login", response_model=TokenResponse)
 @limiter.limit("5/minute")
-def login(dati: LoginRequest, db: Session = Depends(get_db)):
+def login(
+    request: Request,
+    dati: LoginRequest, 
+    db: Session = Depends(get_db)
+    ):
     utente = db.query(Utente).filter(Utente.email == dati.email).first()
 
     if not utente or not verifica_password(dati.password, utente.password_hash or ""):
