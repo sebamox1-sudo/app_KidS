@@ -15,4 +15,3 @@ pydantic[email]>=2.9.0
 bcrypt>=4.2.0
 slowapi==0.1.9
 supabase==2.3.7
-Pillow==10.2.0
