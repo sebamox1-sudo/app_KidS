@@ -64,6 +64,11 @@ class UtenteResponse(BaseModel):
     streak_giorni: int
     onboarding_completato: bool
     creato_at: datetime
+    sfide_partecipate: int = 0
+    sfide_vinte: int = 0
+    voti_dati: int = 0
+    commenti_scritti: int = 0
+    like_ricevuti: int = 0
 
     model_config = {"from_attributes": True}
 

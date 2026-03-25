@@ -257,19 +257,26 @@ def rifiuta_richiesta(
 
 
 # ============================================================
-# LISTA SEGUITI — amici che seguo (per selettore sfida)
+# LISTA SEGUITI DI UN UTENTE — amici che segue un utente (per vedere la sua lista di amici)
 # ============================================================
-@router.get("/me/seguiti", response_model=List[UtenteResponse])
-def get_miei_seguiti(
-    db: Session = Depends(get_db),
-    me: Utente = Depends(get_utente_corrente)
-):
-    """Lista utenti che seguo — usata nel selettore amici per sfide."""
-    seguiti_ids = [f.seguito_id for f in me.seguiti_rel]
+
+@router.get("/{username}/seguiti")
+def get_seguiti_di_utente(username: str, db: Session = Depends(get_db)):
+    # 1. Usiamo la tua funzione helper che normalizza già la @ e gestisce il 404!
+    utente = _trova_utente(username, db)
+    
+    # 2.estraiamo gli ID di chi segue dalla TUA relationship esistente (seguiti_rel)
+    seguiti_ids = [f.seguito_id for f in utente.seguiti_rel]
+    
     if not seguiti_ids:
         return []
-    utenti = db.query(Utente).filter(Utente.id.in_(seguiti_ids)).all()
-    return [_utente_response(u, db) for u in utenti]
+        
+    # 3. Recuperiamo gli utenti completi dal database
+    utenti_seguiti = db.query(Utente).filter(Utente.id.in_(seguiti_ids)).all()
+    
+    # 4. Usiamo _utente_response per restituire i dati nello stesso esatto
+    # formato di Flutter (così è coerente col resto dell'app!)
+    return [_utente_response(amico, db) for amico in utenti_seguiti]
 
 
 # ============================================================

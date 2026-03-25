@@ -21,6 +21,14 @@ class Utente(Base):
     is_banned = Column(Boolean, default=False)
     # ----------------------------------
 
+    # --- STATISTICHE PER I BADGE (Nuove colonne) ---
+    sfide_partecipate = Column(Integer, default=0)
+    sfide_vinte = Column(Integer, default=0)
+    voti_dati = Column(Integer, default=0)
+    commenti_scritti = Column(Integer, default=0)
+    like_ricevuti = Column(Integer, default=0)
+    # -----------------------------------------------
+
     creato_at = Column(DateTime(timezone=True), server_default=func.now())
     aggiornato_at = Column(DateTime(timezone=True), onupdate=func.now())
 

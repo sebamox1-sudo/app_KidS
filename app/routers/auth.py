@@ -111,4 +111,9 @@ def _utente_response(u: Utente, db: Session) -> UtenteResponse:
         streak_giorni=u.streak.giorni if u.streak else 0,
         onboarding_completato=u.onboarding_completato,
         creato_at=u.creato_at,
+        sfide_partecipate= u.sfide_partecipate,
+        sfide_vinte= u.sfide_vinte,
+        voti_dati= u.voti_dati,
+        commenti_scritti= u.commenti_scritti,
+        like_ricevuti= u.like_ricevuti
     )
