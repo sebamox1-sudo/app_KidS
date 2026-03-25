@@ -11,6 +11,7 @@ from typing import List
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from fastapi import Request
+from app.services.storage_service import carica_e_comprimi_foto
 
 limiter = Limiter(key_func=get_remote_address)
 
@@ -101,30 +102,21 @@ async def upload_foto_profilo(
     db: Session = Depends(get_db),
     me: Utente = Depends(get_utente_corrente)
 ):
+    # Controllo di sicurezza sul tipo di file
     if foto.content_type and not foto.content_type.startswith("image/"):
         ext = foto.filename.split(".")[-1].lower() if foto.filename else ""
         if ext not in ["jpg", "jpeg", "png", "gif", "webp", "heic"]:
-            raise HTTPException(status_code=400, detail="File non è un'immagine")
+            raise HTTPException(status_code=400, detail="Il file non è un'immagine")
 
-    os.makedirs(f"{UPLOAD_DIR}/profili", exist_ok=True)
+    # CARICAMENTO CLOUD (tramite il nostro nuovo servizio)
+    # Passiamo il file e indichiamo che va nella cartella "profili" del bucket
+    url_pubblico = await carica_e_comprimi_foto(foto, cartella="profili")
 
-    # Elimina vecchia foto se esiste
-    if me.foto_profilo:
-        vecchio = me.foto_profilo.lstrip("/")
-        try:
-            if os.path.exists(vecchio):
-                os.remove(vecchio)
-        except OSError:
-            pass
-
-    ext = foto.filename.split(".")[-1]
-    filename = f"{uuid.uuid4()}.{ext}"
-    filepath = f"{UPLOAD_DIR}/profili/{filename}"
-    async with aiofiles.open(filepath, "wb") as f:
-        await f.write(await foto.read())
-    me.foto_profilo = f"/uploads/profili/{filename}"
+    # Salviamo solo il link nel nostro database
+    me.foto_profilo = url_pubblico
     db.commit()
     db.refresh(me)
+    
     return _utente_response(me, db)
 
 

@@ -14,6 +14,7 @@ from datetime import datetime, timezone, timedelta
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from fastapi import Request
+from app.services.storage_service import carica_e_comprimi_foto
 
 limiter = Limiter(key_func=get_remote_address)
 
@@ -64,7 +65,9 @@ async def pubblica_post_testuale(
 # PUBBLICA POST CON FOTO
 # ============================================================
 @router.post("/", response_model=PostResponse, status_code=201)
+@limiter.limit("5/minute") # <--- Il Rate limiting che avevamo aggiunto!
 async def pubblica_post(
+    request: Request, # <--- Obbligatorio per il Rate Limiting
     foto_principale: Optional[UploadFile] = File(None),
     foto_selfie: Optional[UploadFile] = File(None),
     hashtag: str = Form(""),
@@ -73,30 +76,22 @@ async def pubblica_post(
     db: Session = Depends(get_db),
     me: Utente = Depends(get_utente_corrente)
 ):
-    os.makedirs(f"{UPLOAD_DIR}/post", exist_ok=True)
-
-    # Salva foto principale se presente
-    nome_file = None
+    # 1. Carica la foto principale nel cloud (se l'utente l'ha inserita)
+    url_foto_principale = None
     if foto_principale and foto_principale.filename:
-        ext = foto_principale.filename.split(".")[-1]
-        nome_file = f"{uuid.uuid4()}.{ext}"
-        percorso = f"{UPLOAD_DIR}/post/{nome_file}"
-        async with aiofiles.open(percorso, "wb") as f:
-            await f.write(await foto_principale.read())
+        # Usiamo il nostro motore: comprime a 1440px e spedisce su Supabase
+        url_foto_principale = await carica_e_comprimi_foto(foto_principale, cartella="post")
 
-    # Salva selfie se presente
-    nome_selfie = None
+    # 2. Carica il selfie nel cloud (se presente)
+    url_foto_selfie = None
     if foto_selfie and foto_selfie.filename:
-        ext2 = foto_selfie.filename.split(".")[-1]
-        nome_selfie = f"{uuid.uuid4()}.{ext2}"
-        percorso_selfie = f"{UPLOAD_DIR}/post/{nome_selfie}"
-        async with aiofiles.open(percorso_selfie, "wb") as f:
-            await f.write(await foto_selfie.read())
+        url_foto_selfie = await carica_e_comprimi_foto(foto_selfie, cartella="post")
 
+    # 3. Creiamo il Post nel Database usando i link pubblici appena ricevuti!
     post = Post(
         autore_id=me.id,
-        foto_principale=f"/uploads/post/{nome_file}" if nome_file else None,
-        foto_selfie=f"/uploads/post/{nome_selfie}" if nome_selfie else None,
+        foto_principale=url_foto_principale,
+        foto_selfie=url_foto_selfie,
         hashtag=hashtag,
         amici_taggati=amici_taggati,
         testo=testo,
@@ -104,6 +99,7 @@ async def pubblica_post(
     db.add(post)
     db.flush()
 
+    # Aggiorniamo le statistiche e inviamo le notifiche (tuo codice originale)
     _aggiorna_streak(me, db)
 
     for follow in me.follower_rel:
@@ -118,6 +114,7 @@ async def pubblica_post(
     db.commit()
     db.refresh(post)
     await verifica_badge(me, db)
+    
     return _post_response(post, me.id, db)
 
 
@@ -332,18 +329,12 @@ def elimina_post(post_id: int, db: Session = Depends(get_db),
 # ============================================================
 
 def _elimina_file_post(post: Post):
-    """Elimina i file foto dal filesystem quando un post viene cancellato."""
-    for percorso_db in [post.foto_principale, post.foto_selfie]:
-        if not percorso_db:
-            continue
-        # percorso_db è tipo "/uploads/post/uuid.jpg"
-        # Il file fisico è in "uploads/post/uuid.jpg" (senza / iniziale)
-        percorso_fisico = percorso_db.lstrip("/")
-        try:
-            if os.path.exists(percorso_fisico):
-                os.remove(percorso_fisico)
-        except OSError:
-            pass  # Non bloccare la cancellazione se il file non esiste
+    """
+    I file ora sono su Supabase. 
+    Per ora lasciamo che restino nel bucket cloud, 
+    oppure in futuro aggiungeremo una chiamata per cancellarli da lì.
+    """
+    pass
 
 
 def _post_response(post: Post, utente_id: int, db: Session) -> PostResponse:
