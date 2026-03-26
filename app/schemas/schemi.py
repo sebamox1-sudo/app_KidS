@@ -72,6 +72,8 @@ class UtenteResponse(BaseModel):
 
     model_config = {"from_attributes": True}
 
+    ultimi_post: List[dict] = []
+
 
 class AggiornaProfilo(BaseModel):
     nome: Optional[str] = None

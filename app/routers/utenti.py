@@ -82,8 +82,15 @@ def get_profilo(username: str, db: Session = Depends(get_db),
             "id": p.id,
             "foto_principale": p.foto_principale,
             "foto_selfie": p.foto_selfie,
-            "creato_at": p.creato_at.isoformat() if p.creato_at else None
-        } for p in post_db
+            "testo" : p.testo,
+            "creato_at": p.creato_at.isoformat() if p.creato_at else None,
+            # ✨ STATISTICHE PER FLUTTER
+            "num_like" : len(p.like), # Conta quanti like ci sono
+            "media_voti" : p.media_voti if p.media_voti is not None else 0.0,
+            "num_commenti" : len(p.commenti),
+            # Ti serve anche sapere se TU (utente loggato) hai messo like a questo post
+            "is_liked": any(l.utente_id == me.id for l in p.like)
+        }  for p in post_db
     ]
     return res
 
