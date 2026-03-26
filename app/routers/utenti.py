@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.models.modelli import Utente, Follow, BadgeUtente, Notifica, RichiestaFollow
+from app.models.modelli import Utente, Follow, BadgeUtente, Notifica, RichiestaFollow, Post
 from app.schemas.schemi import UtenteResponse, AggiornaProfilo, BadgeResponse
 from app.dependencies import get_utente_corrente
 from app.routers.auth import _utente_response
@@ -62,9 +62,30 @@ def get_miei_seguiti(
 @router.get("/{username}", response_model=UtenteResponse)
 def get_profilo(username: str, db: Session = Depends(get_db),
                 me: Utente = Depends(get_utente_corrente)):
+    # 1. Trova l'utente
     utente = _trova_utente(username, db)
-    return _utente_response(utente, db)
-
+    # 2. Ottieni i dati base (nome, bio, etc.) chiamando la tua funzione esistente
+    dati_utente = _utente_response(utente, db)
+    # Se _utente_response restituisce un oggetto Pydantic, lo trasformiamo in dizionario
+    if hasattr(dati_utente, "dict"):
+        res = dati_utente.dict()
+    else:
+        res = dict(dati_utente)
+    # 3. ✨ IL PEZZO MANCANTE: Recupera gli ultimi post di questo utente
+    # Ordiniamo per data decrescente (i più nuovi in alto)
+    post_db = db.query(Post).filter(
+        Post.autore_id == utente.id # Assicurati che il campo si chiami 'utente_id' o 'autore_id'
+    ).order_by(Post.creato_at.desc()).limit(21).all()
+    # 4. Formattiamo i post come si aspetta Flutter
+    res["ultimi_post"] = [
+        {
+            "id": p.id,
+            "foto_principale": p.foto_principale,
+            "foto_selfie": p.foto_selfie,
+            "creato_at": p.creato_at.isoformat() if p.creato_at else None
+        } for p in post_db
+    ]
+    return res
 
 # ============================================================
 # AGGIORNA PROFILO
