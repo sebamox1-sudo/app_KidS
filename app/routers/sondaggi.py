@@ -146,6 +146,48 @@ def vota_sondaggio(
     db.commit()
     return {"messaggio": "Voto registrato"}
 
+@router.get("/{sondaggio_id}/voti")
+def get_voti_sondaggio(
+    sondaggio_id: int, 
+    db: Session = Depends(get_db), 
+    me: Utente = Depends(get_utente_corrente)
+    ):
+    # 1. Trova il sondaggio
+    sondaggio = db.query(Sondaggio).filter(Sondaggio.id == sondaggio_id).first()
+    
+    if not sondaggio:
+        return {"successo": False, "errore": "Sondaggio non trovato"}
+        
+    # 2. Controllo di sicurezza: SOLO L'AUTORE PUÒ VEDERE I VOTI!
+    if sondaggio.autore_id != me.id:
+        return {"successo": False, "errore": "Non sei l'autore di questo sondaggio"}
+        
+    # 3. Recupera i voti
+    voti_db = db.query(VotoSondaggio).filter(VotoSondaggio.sondaggio_id == sondaggio_id).all()
+    
+    risultato = []
+    for v in voti_db:
+        utente = v.utente # Assumendo la relationship
+        if v.is_anonimo:
+            # Nascondiamo l'identità!
+            risultato.append({
+                "nome": "Voto Anonimo",
+                "avatar": None,
+                "is_anonimo": True,
+                "opzione_index": v.opzione_index
+            })
+        else:
+            # Mostriamo l'identità
+            risultato.append({
+                "nome": utente.nome,
+                "username": utente.username,
+                "avatar": utente.foto_profilo,
+                "is_anonimo": False,
+                "opzione_index": v.opzione_index
+            })
+            
+    return {"successo": True, "dati": risultato}
+
 
 # ============================================================
 # HELPER
