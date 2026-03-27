@@ -167,13 +167,15 @@ def get_voti_sondaggio(
     
     risultato = []
     for v in voti_db:
-        utente = v.utente # Assumendo la relationship
-        if v.is_anonimo:
-            # Nascondiamo l'identità!
+        utente = None # Assumendo la relationship
+        if v.utente_id:
+            utente = db.query(Utente).filter(Utente.id == v.utente_id).first()
+        # Se il voto è anonimo o l'utente è stato cancellato, nascondiamo tutto
+        if v.anonimo or not utente:
             risultato.append({
                 "nome": "Voto Anonimo",
                 "avatar": None,
-                "is_anonimo": True,
+                "is_anonimo": True, # Lasciamo is_anonimo qui per Flutter
                 "opzione_index": v.opzione_index
             })
         else:
@@ -182,9 +184,10 @@ def get_voti_sondaggio(
                 "nome": utente.nome,
                 "username": utente.username,
                 "avatar": utente.foto_profilo,
-                "is_anonimo": False,
+                "is_anonimo": False, # Lasciamo is_anonimo qui per Flutter
                 "opzione_index": v.opzione_index
             })
+        
             
     return {"successo": True, "dati": risultato}
 
