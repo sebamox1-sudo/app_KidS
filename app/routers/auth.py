@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, case
 from app.database import get_db
 from app.models.modelli import Utente, Streak, Follow, Post
 from app.schemas.schemi import RegistrazioneRequest, LoginRequest, TokenResponse, UtenteResponse
@@ -112,6 +112,18 @@ def _utente_response(u: Utente, db: Session) -> UtenteResponse:
         Post.autore_id == u.id
     ).scalar() or 0
 
+    # 🔥 CALCOLO DELLA POSIZIONE IN CLASSIFICA BASATO SULLO STREAK
+    mio_streak = u.streak.giorni if u.streak else 0
+    # Contiamo quanti utenti hanno uno streak MAGGIORE di questo utente
+    utenti_davanti = db.query(Utente).outerjoin(Streak).filter(
+        case((Streak.giorni != None, Streak.giorni), else_=0) > mio_streak
+    ).count()
+    # Se ha 0 di streak, potremmo volerlo escludere dal podio assegnandogli una posizione alta finta o 0.
+    # Ma per logica standard, la sua posizione è: (quelli davanti) + 1
+    posizione_attuale = utenti_davanti + 1 if mio_streak > 0 else 0
+    # ATTENZIONE: Se UtenteResponse (in schemi.py) usa pydantic, 
+    # assicurati di aggiungere 'posizione_classifica: int = 0' al modello UtenteResponse in schemi.py!
+
     return UtenteResponse(
         id=u.id,
         nome=u.nome,
@@ -130,5 +142,6 @@ def _utente_response(u: Utente, db: Session) -> UtenteResponse:
         sfide_vinte= u.sfide_vinte,
         voti_dati= u.voti_dati,
         commenti_scritti= u.commenti_scritti,
-        like_ricevuti= u.like_ricevuti
+        like_ricevuti= u.like_ricevuti,
+        posizione_classifica=posizione_attuale
     )

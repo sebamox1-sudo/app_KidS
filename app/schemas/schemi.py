@@ -69,6 +69,7 @@ class UtenteResponse(BaseModel):
     voti_dati: int = 0
     commenti_scritti: int = 0
     like_ricevuti: int = 0
+    posizione_classifica : int = 0
 
     model_config = {"from_attributes": True}
 
