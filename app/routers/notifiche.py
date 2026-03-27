@@ -77,7 +77,7 @@ def count_non_lette(
     ).count()
     return {"count": count}
 
-@router.delete("/cancella-tutte")
+@router.delete("/notifiche/cancella-tutte")
 def cancella_tutte_notifiche(
     db: Session = Depends(get_db), 
     me: Utente = Depends(get_utente_corrente)
