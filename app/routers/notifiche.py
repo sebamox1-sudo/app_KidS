@@ -50,26 +50,15 @@ def segna_tutte_lette(
     return {"messaggio": "Tutte le notifiche segnate come lette"}
 
 
-@router.delete("/notifiche/cancella-tutte")
-def cancella_tutte_notifiche(
-    db: Session = Depends(get_db), 
-    me: Utente = Depends(get_utente_corrente)
-):
+@router.delete("/svuota/tutte")
+def cancella_tutte_notifiche(db: Session = Depends(get_db), me: Utente = Depends(get_utente_corrente)):
     try:
-        # 🔥 FIX: Usiamo destinatario_id invece di utente_id!
         elementi_cancellati = db.query(Notifica).filter(Notifica.destinatario_id == me.id).delete(synchronize_session=False)
-        
-        # Salviamo la modifica nel database
         db.commit()
-        
-        return {
-            "successo": True, 
-            "messaggio": f"Eliminate {elementi_cancellati} notifiche."
-        }
+        return {"successo": True, "messaggio": f"Eliminate {elementi_cancellati} notifiche."}
     except Exception as e:
-        # Se qualcosa va storto, annulliamo l'operazione per non corrompere il database
         db.rollback()
-        return {"successo": False, "errore": f"Errore durante l'eliminazione: {str(e)}"}
+        return {"successo": False, "errore": str(e)}
 
 
 @router.delete("/{notifica_id}")
