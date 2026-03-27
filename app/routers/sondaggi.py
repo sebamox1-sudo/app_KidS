@@ -179,13 +179,15 @@ def get_voti_sondaggio(
                 "opzione_index": v.opzione_index
             })
         else:
+            dati_utente_completi = _utente_response(utente, db)
             # Mostriamo l'identità
             risultato.append({
                 "nome": utente.nome,
                 "username": utente.username,
                 "avatar": utente.foto_profilo,
                 "is_anonimo": False, # Lasciamo is_anonimo qui per Flutter
-                "opzione_index": v.opzione_index
+                "opzione_index": v.opzione_index,
+                "posizione_classifica": dati_utente_completi.posizione_classifica # 🔥 ECCO IL DATO PER FLUTTER!
             })
         
             
