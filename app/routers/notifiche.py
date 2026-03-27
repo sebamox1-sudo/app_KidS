@@ -77,6 +77,27 @@ def count_non_lette(
     ).count()
     return {"count": count}
 
+@router.delete("/cancella-tutte")
+def cancella_tutte_notifiche(
+    db: Session = Depends(get_db), 
+    me: Utente = Depends(get_utente_corrente)
+):
+    try:
+        # 🔥 FIX: Usiamo destinatario_id invece di utente_id!
+        elementi_cancellati = db.query(Notifica).filter(Notifica.destinatario_id == me.id).delete(synchronize_session=False)
+        
+        # Salviamo la modifica nel database
+        db.commit()
+        
+        return {
+            "successo": True, 
+            "messaggio": f"Eliminate {elementi_cancellati} notifiche."
+        }
+    except Exception as e:
+        # Se qualcosa va storto, annulliamo l'operazione per non corrompere il database
+        db.rollback()
+        return {"successo": False, "errore": f"Errore durante l'eliminazione: {str(e)}"}
+
 
 def _notifica_response(n: Notifica, db: Session) -> NotificaResponse:
     return NotificaResponse(
@@ -87,3 +108,4 @@ def _notifica_response(n: Notifica, db: Session) -> NotificaResponse:
         mittente=_utente_response(n.mittente, db) if n.mittente else None,
         creato_at=n.creato_at,
     )
+
