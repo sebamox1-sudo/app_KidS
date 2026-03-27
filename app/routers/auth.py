@@ -116,7 +116,10 @@ def _utente_response(u: Utente, db: Session) -> UtenteResponse:
     mio_streak = u.streak.giorni if u.streak else 0
     # Contiamo quanti utenti hanno uno streak MAGGIORE di questo utente
     utenti_davanti = db.query(Utente).outerjoin(Streak).filter(
-        case((Streak.giorni != None, Streak.giorni), else_=0) > mio_streak
+        # Ha più punti di me
+        (case((Streak.giorni != None, Streak.giorni), else_=0) > mio_streak) |
+        # OPPURE ha gli stessi punti ma si è iscritto prima di me
+        ((case((Streak.giorni != None, Streak.giorni), else_=0) == mio_streak) & (Utente.id < u.id))
     ).count()
     # Se ha 0 di streak, potremmo volerlo escludere dal podio assegnandogli una posizione alta finta o 0.
     # Ma per logica standard, la sua posizione è: (quelli davanti) + 1
