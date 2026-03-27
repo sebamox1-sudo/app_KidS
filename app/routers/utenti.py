@@ -309,22 +309,45 @@ def get_seguiti_di_utente(username: str, db: Session = Depends(get_db)):
 # RICERCA UTENTI — normalizza input
 # ============================================================
 
-@router.get("/ricerca/{query}", response_model=List[UtenteResponse])
+@router.get("/ricerca/{query}")
 @limiter.limit("20/minute") # <--- Aggiungi questo decoratore
 def cerca_utenti(
     request: Request,
-    query: str, db: Session = Depends(get_db),
+    query: str,
+    db: Session = Depends(get_db),
     me: Utente = Depends(get_utente_corrente)):
     # Normalizza: rimuovi @ e spazi
     q = query.strip().lstrip("@")
+    # Ritorna il formato standard che Flutter si aspetta se la query è vuota
     if len(q) < 1:
         return []
-
+    # 1) trova gli utenti
     utenti = db.query(Utente).filter(
         (Utente.username.ilike(f"%{q}%")) |
         (Utente.nome.ilike(f"%{q}%"))
     ).limit(20).all()
-    return [_utente_response(u, db) for u in utenti]
+
+    risultato_finale = []
+
+    for u in utenti:
+        # 2. Ottieni i dati base dell'utente usando la tua funzione esistente
+        dati_base = _utente_response(u, db)
+        # Se la tua funzione restituisce un modello Pydantic, convertilo in dizionario:
+        if hasattr(dati_base, "dict"):
+            dati_base = dati_base.dict()
+        # 3. Cerca gli ultimi 3 post di questo utente
+        ultimi_post = db.query(Post).filter(
+            Post.autore_id == u.id
+        ).order_by(Post.creato_at.desc()).limit(3).all()
+        # 4. Estrai solo i link delle foto (assicurati che il campo si chiami url_foto o adattalo al tuo db)
+        urls_foto = [post.foto_principale for post in ultimi_post if post.foto_principale]
+        # 5. Inserisci il nuovo campo magico per Flutter
+        dati_base["ultime_tre_foto"] = urls_foto
+
+        risultato_finale.append(dati_base)
+
+    # 6. Ritorna il formato esatto che Flutter decodifica ("successo" e "dati")
+    return {"successo": True, "dati": risultato_finale}
 
 
 # ============================================================

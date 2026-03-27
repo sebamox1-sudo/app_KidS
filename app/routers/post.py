@@ -178,14 +178,20 @@ def get_feed(skip: int = 0, limit: int = 20,
 # LIKE / UNLIKE
 # ============================================================
 @router.post("/{post_id}/like")
-def metti_like(post_id: int, db: Session = Depends(get_db),
-               me: Utente = Depends(get_utente_corrente)):
+def metti_like(
+    post_id: int, 
+    db: Session = Depends(get_db),
+    me: Utente = Depends(get_utente_corrente)
+    ):
     post = db.query(Post).filter(Post.id == post_id).first()
     if not post:
         raise HTTPException(status_code=404, detail="Post non trovato")
-
+    # Controlla se il like esiste già. 
+    # ATTENZIONE: Usa 'follower_id' o 'utente_id' in base a come lo hai chiamato nel modello Like
     esiste = db.query(Like).filter(
-        Like.utente_id == me.id, Like.post_id == post_id).first()
+        Like.utente_id == me.id, 
+        Like.post_id == post_id
+        ).first()
     if esiste:
         raise HTTPException(status_code=400, detail="Like già messo")
 
@@ -198,7 +204,7 @@ def metti_like(post_id: int, db: Session = Depends(get_db),
             mittente_id=me.id,
             tipo="like",
             testo=f"{me.nome} ha messo like al tuo post",
-        ))
+        )) 
 
     db.commit()
     return {"num_like": post.num_like}
