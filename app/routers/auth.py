@@ -123,7 +123,7 @@ def _utente_response(u: Utente, db: Session) -> UtenteResponse:
     ).count()
     # Se ha 0 di streak, potremmo volerlo escludere dal podio assegnandogli una posizione alta finta o 0.
     # Ma per logica standard, la sua posizione è: (quelli davanti) + 1
-    posizione_attuale = utenti_davanti + 1 if mio_streak > 0 else 0
+    posizione_attuale = utenti_davanti + 1
     # ATTENZIONE: Se UtenteResponse (in schemi.py) usa pydantic, 
     # assicurati di aggiungere 'posizione_classifica: int = 0' al modello UtenteResponse in schemi.py!
 
