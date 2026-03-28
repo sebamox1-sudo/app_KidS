@@ -28,6 +28,9 @@ class Utente(Base):
     voti_negativi = Column(Integer, default=0) # ✨ AGGIUNTO PER IL BADGE "OCCHIO FINO"
     commenti_scritti = Column(Integer, default=0)
     like_ricevuti = Column(Integer, default=0)
+    miglior_media = Column(Float, default=0.0)
+    ha_preso_dieci = Column(Boolean, default=False)
+    sfide_rapide = Column(Integer, default=0) # ✨ Per il badge "Flash"
     # -----------------------------------------------
 
     creato_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -55,6 +58,11 @@ class Utente(Base):
     @property
     def num_post(self): # ✨ AGGIUNTO PER IL BADGE DEI POST
         return len(self.post)
+    
+    @property
+    def streak_giorni(self):
+        # Se l'utente ha una streak attiva, restituisce i giorni, altrimenti 0
+        return self.streak.giorni if self.streak else 0
 
 
 class Follow(Base):

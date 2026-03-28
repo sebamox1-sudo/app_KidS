@@ -178,6 +178,13 @@ async def partecipa_sfida(
     )
     db.add(partecipazione)
 
+    # Calcoliamo se è una partecipazione rapida (entro 10 min dal lancio)
+    tempo_trascorso = datetime.now(timezone.utc) - sfida.creato_at
+    if tempo_trascorso <= timedelta(minutes=10):
+        me.sfide_rapide += 1 # ⚡️ Salva il record sul database!
+
+    db.commit()
+
     me.sfide_partecipate += 1
 
     if sfida.autore_id != me.id:
@@ -242,18 +249,32 @@ def vota_partecipazione(
     if esiste:
         raise HTTPException(status_code=400, detail="Hai già votato")
 
-    # Estrai il voto dal modello Pydantic
-    db.add(VotoSfida(
+
+    # 1. Registriamo il voto
+    nuovo_voto = VotoSfida(
         partecipazione_id=partecipazione_id,
         votante_id=me.id,
-        voto=dati.voto, # <-- INSERISCI QUI dati.voto
-    ))
+        voto=dati.voto
+    )
+    db.add(nuovo_voto)
     # ✨ FIX PER I BADGE DEI VOTI!
     me.voti_dati += 1
-    # per tenere traccia anche dei voti negativi per il badge "Occhio Fino":
     if dati.voto < 5.0:
         me.voti_negativi += 1
+
+    # 3. AGGIORNIAMO LE STATISTICHE DELL'AUTORE (Chi riceve il voto)
+    autore_foto = p.utente
+    if dati.voto == 10.0:
+        autore_foto.ha_preso_dieci = True
+
+    # 4. CALCOLO MEDIA AGGIORNATA
+    db.flush() # Allinea il database senza chiudere la transazione [cite: 2026-03-17]
+    if p.media_voti > autore_foto.miglior_media:
+        autore_foto.miglior_media = p.media_voti # Badge "Stella"
+    
+    # 5. SALVATAGGIO DEFINITIVO
     db.commit()
+    
     return {"media_voti": p.media_voti}
 
 

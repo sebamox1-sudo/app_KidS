@@ -198,6 +198,10 @@ def metti_like(
     like = Like(utente_id=me.id, post_id=post_id)
     db.add(like)
 
+    # ✨ AGGIORNAMENTO BADGE: Chi riceve il like diventa più popolare!
+    if post.autore:
+        post.autore.like_ricevuti += 1
+
     if post.autore_id != me.id:
         db.add(Notifica(
             destinatario_id=post.autore_id,
@@ -217,6 +221,11 @@ def togli_like(post_id: int, db: Session = Depends(get_db),
         Like.utente_id == me.id, Like.post_id == post_id).first()
     if not like:
         raise HTTPException(status_code=404, detail="Like non trovato")
+    
+    # ✨ SCALIAMO IL LIKE:
+    if like.post.autore:
+        like.post.autore.like_ricevuti -= 1
+
     db.delete(like)
     db.commit()
     return {"messaggio": "Like rimosso"}
@@ -245,6 +254,11 @@ async def vota_post(post_id: int, dati: VotoPostRequest,
         anonimo=dati.anonimo,
     )
     db.add(voto)
+
+    # ✨ AGGIORNAMENTO BADGE: Incrementiamo i tuoi voti dati
+    me.voti_dati += 1
+    if dati.voto < 5:
+        me.voti_negativi += 1 # Per il badge "Occhio Fino"
 
     if post.autore_id != me.id:
         testo = (
@@ -295,6 +309,9 @@ async def aggiungi_commento(
         risposta_a_id=dati.risposta_a_id,
     )
     db.add(commento)
+
+    # ✨ AGGIORNAMENTO BADGE: Sei un utente attivo nei commenti!
+    me.commenti_scritti += 1
 
     if post.autore_id != me.id:
         db.add(Notifica(
