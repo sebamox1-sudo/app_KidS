@@ -178,6 +178,8 @@ async def partecipa_sfida(
     )
     db.add(partecipazione)
 
+    me.sfide_partecipate += 1
+
     if sfida.autore_id != me.id:
         db.add(Notifica(
             destinatario_id=sfida.autore_id,
@@ -246,6 +248,10 @@ def vota_partecipazione(
         votante_id=me.id,
         voto=dati.voto, # <-- INSERISCI QUI dati.voto
     ))
+    # ✨ FIX PER I BADGE DEI VOTI!
+    me.voti_dati += 1
+    # per tenere traccia anche dei voti negativi per il badge "Occhio Fino":
+
     db.commit()
     return {"media_voti": p.media_voti}
 

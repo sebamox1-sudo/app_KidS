@@ -25,6 +25,7 @@ class Utente(Base):
     sfide_partecipate = Column(Integer, default=0)
     sfide_vinte = Column(Integer, default=0)
     voti_dati = Column(Integer, default=0)
+    voti_negativi = Column(Integer, default=0) # ✨ AGGIUNTO PER IL BADGE "OCCHIO FINO"
     commenti_scritti = Column(Integer, default=0)
     like_ricevuti = Column(Integer, default=0)
     # -----------------------------------------------
@@ -50,6 +51,10 @@ class Utente(Base):
     @property
     def num_seguiti(self):
         return len(self.seguiti_rel)
+    
+    @property
+    def num_post(self): # ✨ AGGIUNTO PER IL BADGE DEI POST
+        return len(self.post)
 
 
 class Follow(Base):
