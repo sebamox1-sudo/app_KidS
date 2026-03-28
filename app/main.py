@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from app.database import engine, Base
+import app.models.modelli as modelli
 from app.routers import auth, utenti, post, notifiche, sondaggi, sfide, classifica
 import os
 
@@ -14,7 +14,7 @@ from app.database import engine, Base
 
 
 # ----------------------------------------------------
-Base.metadata.create_all(bind=engine)
+modelli.Base.metadata.create_all(bind=engine)
 
 os.makedirs("uploads/post", exist_ok=True)
 os.makedirs("uploads/profili", exist_ok=True)
