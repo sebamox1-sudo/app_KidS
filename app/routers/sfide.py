@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 from typing import List, Optional
 from datetime import datetime, timezone, timedelta
+from pydantic import BaseModel
 from app.database import get_db
 from app.models.modelli import (
     Sfida, PartecipazioneSfida, VotoSfida, InvitoSfida,
@@ -15,6 +16,9 @@ import aiofiles, os, uuid
 
 router = APIRouter(prefix="/sfide", tags=["Sfide"])
 UPLOAD_DIR = os.getenv("UPLOAD_DIR", "uploads")
+
+class RichiestaVoto(BaseModel):
+    voto: float
 
 
 # ============================================================
@@ -220,7 +224,7 @@ def get_partecipazioni(
 @router.post("/partecipazioni/{partecipazione_id}/vota")
 def vota_partecipazione(
     partecipazione_id: int,
-    voto: float,
+    dati: RichiestaVoto, # <-- PRIMA ERA: voto: float. ORA USIAMO IL MODELLO!
     db: Session = Depends(get_db),
     me: Utente = Depends(get_utente_corrente)
 ):
@@ -236,10 +240,11 @@ def vota_partecipazione(
     if esiste:
         raise HTTPException(status_code=400, detail="Hai già votato")
 
+    # Estrai il voto dal modello Pydantic
     db.add(VotoSfida(
         partecipazione_id=partecipazione_id,
         votante_id=me.id,
-        voto=voto,
+        voto=dati.voto, # <-- INSERISCI QUI dati.voto
     ))
     db.commit()
     return {"media_voti": p.media_voti}
