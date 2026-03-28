@@ -251,7 +251,8 @@ def vota_partecipazione(
     # ✨ FIX PER I BADGE DEI VOTI!
     me.voti_dati += 1
     # per tenere traccia anche dei voti negativi per il badge "Occhio Fino":
-
+    if dati.voto < 5.0:
+        me.voti_negativi += 1
     db.commit()
     return {"media_voti": p.media_voti}
 
