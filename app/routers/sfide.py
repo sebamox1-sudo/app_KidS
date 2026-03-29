@@ -49,6 +49,21 @@ def get_sfide_feed(
     return sfide_visibili
 
 
+@router.get("/feed", response_model=List[SfidaResponse])
+def get_sfide_feed(
+    db: Session = Depends(get_db),
+    me: Utente = Depends(get_utente_corrente)
+):
+    """Tutte le sfide attive visibili all'utente."""
+    ora = datetime.now(timezone.utc)
+    sfide = db.query(Sfida).filter(
+        Sfida.scadenza > ora
+    ).order_by(Sfida.creato_at.desc()).all()
+
+    visibili = [s for s in sfide if _utente_puo_vedere(s, me, db)]
+    return [_sfida_response(s, me.id, db) for s in visibili]
+
+
 # ============================================================
 # LE MIE SFIDE — create da me o dove sono invitato
 # ============================================================

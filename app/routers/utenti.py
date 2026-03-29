@@ -349,7 +349,7 @@ def cerca_utenti(
         risultato_finale.append(dati_base)
 
     # 6. Ritorna il formato esatto che Flutter decodifica ("successo" e "dati")
-    return {"successo": True, "dati": risultato_finale}
+    return risultato_finale
 
 
 # ============================================================
