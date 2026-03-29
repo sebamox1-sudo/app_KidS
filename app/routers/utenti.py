@@ -116,6 +116,8 @@ def aggiorna_profilo(dati: AggiornaProfilo, db: Session = Depends(get_db),
         me.bio = dati.bio
     if dati.is_privato is not None:
         me.is_privato = dati.is_privato
+    if dati.onboarding_completato is not None:
+        me.onboarding_completato = dati.onboarding_completato
     db.commit()
     db.refresh(me)
     return _utente_response(me, db)

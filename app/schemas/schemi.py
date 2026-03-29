@@ -81,6 +81,7 @@ class AggiornaProfilo(BaseModel):
     username: Optional[str] = None
     bio: Optional[str] = None
     is_privato: Optional[bool] = None
+    onboarding_completato: Optional[bool] = None
 
 
 # ============================================================
