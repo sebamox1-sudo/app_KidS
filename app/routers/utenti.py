@@ -273,12 +273,7 @@ def accetta_richiesta(
     )
     db.add(follow)
     richiesta.stato = "accettata"
-
-    # 3. ✨ Aggiorniamo i contatori del profilo!
-    me.num_follower += 1
-    richiedente = db.query(Utente).filter(Utente.id == utente_id).first()
-    if richiedente:
-        richiedente.num_seguiti += 1
+    
 
     # 4. Inviamo la notifica
     db.add(Notifica(
