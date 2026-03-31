@@ -47,6 +47,25 @@ def get_richieste_ricevute(
         "creato_at": r.creato_at,
     } for r in richieste]
 
+@router.get("/me/richieste-inviate")
+def get_richieste_inviate(db: Session = Depends(get_db), me: Utente = Depends(get_utente_corrente)):
+    # Cerchiamo tutte le richieste in cui IO sono il richiedente e sono "in_attesa"
+    richieste = db.query(RichiestaFollow).filter(
+        RichiestaFollow.richiedente_id == me.id,
+        RichiestaFollow.stato == "in_attesa"
+    ).all()
+    
+    risultati = []
+    for r in richieste:
+        # Troviamo l'utente a cui l'abbiamo mandata per prenderne l'username
+        destinatario = db.query(Utente).filter(Utente.id == r.destinatario_id).first()
+        if destinatario:
+            risultati.append({
+                "username": destinatario.username
+            })
+            
+    return {"successo": True, "dati": risultati}
+
 
 @router.get("/me/seguiti", response_model=List[UtenteResponse])
 def get_miei_seguiti(
