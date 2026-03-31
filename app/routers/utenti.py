@@ -67,10 +67,7 @@ def get_profilo(username: str, db: Session = Depends(get_db),
     # 2. Ottieni i dati base (nome, bio, etc.) chiamando la tua funzione esistente
     dati_utente = _utente_response(utente, db)
     # Se _utente_response restituisce un oggetto Pydantic, lo trasformiamo in dizionario
-    if hasattr(dati_utente, "dict"):
-        res = dati_utente.dict()
-    else:
-        res = dict(dati_utente)
+    res = dati_utente.model_dump()
     # 3. ✨ IL PEZZO MANCANTE: Recupera gli ultimi post di questo utente
     # Ordiniamo per data decrescente (i più nuovi in alto)
     post_db = db.query(Post).filter(
@@ -386,16 +383,3 @@ def stato_follow(username: str, db: Session = Depends(get_db),
         return {"stato": "richiesta_inviata"}
 
     return {"stato": "nessuno"}
-
-def calcola_posizione_classifica(punteggio_utente):
-    # Se l'utente ha 0 punti o non ha giocato, potremmo non dargli nessuna posizione (0)
-    if not punteggio_utente or punteggio_utente <= 0:
-        return 0
-        
-    # Contiamo quanti utenti nel database hanno STRETTAMENTE PIÙ punti di lui
-    utenti_migliori = Utente.query.filter(Utente.punteggio > punteggio_utente).count()
-    
-    # La sua posizione è il numero di persone più brave + 1
-    posizione = utenti_migliori + 1
-    
-    return posizione

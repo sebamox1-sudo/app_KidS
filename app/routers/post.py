@@ -140,8 +140,11 @@ def get_feed(skip: int = 0, limit: int = 20,
     )
     autori_ids = [u.id for u in autori_visibili]
 
+    ventiquattro_ore_fa = datetime.now(timezone.utc) - timedelta(hours=24)
+
     post = db.query(Post).filter(
-        Post.autore_id.in_(autori_ids)
+    Post.autore_id.in_(autori_ids),
+    Post.creato_at > ventiquattro_ore_fa  # ← solo ultimi 24h
     ).order_by(Post.creato_at.desc()).offset(skip).limit(limit).all()
 
     if not post:
