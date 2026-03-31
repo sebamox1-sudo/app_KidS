@@ -24,44 +24,27 @@ class RichiestaVoto(BaseModel):
 # ============================================================
 # FEED SFIDE — mostra TUTTE le sfide attive tue e dei tuoi amici
 # ============================================================
-@router.get("/feed")
-def get_sfide_feed(
-    db: Session = Depends(get_db),
-    me: Utente = Depends(get_utente_corrente)
-):
-    ora = datetime.now(timezone.utc)
-    # 1. Trova gli ID delle persone che seguo
-    seguiti_ids = [f.seguito_id for f in me.seguiti_rel]
-    # 2. Aggiungi il mio ID (voglio vedere le mie sfide nel feed)
-    autori_validi = seguiti_ids + [me.id]
-    # 3. Prendi tutte le sfide attive create da questi autori
-
-    sfide = db.query(Sfida).filter(
-        Sfida.autore_id.in_(autori_validi),
-        Sfida.scadenza > ora
-    ).order_by(Sfida.creato_at.desc()).all()
-    # 4. Filtra ulteriormente per visibilità (se è privata, controlla se sono invitato)
-    sfide_visibili = []
-    for sfida in sfide:
-        if _utente_puo_vedere(sfida, me, db):
-            sfide_visibili.append(_sfida_response(sfida, me.id, db))
-
-    return sfide_visibili
-
-
 @router.get("/feed", response_model=List[SfidaResponse])
 def get_sfide_feed(
     db: Session = Depends(get_db),
     me: Utente = Depends(get_utente_corrente)
 ):
-    """Tutte le sfide attive visibili all'utente."""
+    """Sfide attive degli utenti che seguo + le mie."""
     ora = datetime.now(timezone.utc)
+    seguiti_ids = [f.seguito_id for f in me.seguiti_rel]
+    autori_validi = seguiti_ids + [me.id]
+
     sfide = db.query(Sfida).filter(
+        Sfida.autore_id.in_(autori_validi),
         Sfida.scadenza > ora
     ).order_by(Sfida.creato_at.desc()).all()
 
-    visibili = [s for s in sfide if _utente_puo_vedere(s, me, db)]
-    return [_sfida_response(s, me.id, db) for s in visibili]
+    return [
+        _sfida_response(s, me.id, db)
+        for s in sfide
+        if _utente_puo_vedere(s, me, db)
+    ]
+
 
 
 # ============================================================
@@ -197,10 +180,10 @@ async def partecipa_sfida(
     tempo_trascorso = datetime.now(timezone.utc) - sfida.creato_at
     if tempo_trascorso <= timedelta(minutes=10):
         me.sfide_rapide += 1 # ⚡️ Salva il record sul database!
+    
+    me.sfide_partecipate += 1
 
     db.commit()
-
-    me.sfide_partecipate += 1
 
     if sfida.autore_id != me.id:
         db.add(Notifica(
