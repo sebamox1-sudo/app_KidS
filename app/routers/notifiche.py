@@ -90,12 +90,23 @@ def count_non_lette(
 
 
 def _notifica_response(n: Notifica, db: Session) -> NotificaResponse:
+    richiesta_id = None
+    if n.tipo == 'richiesta_follow' and n.mittente_id:
+        from app.models.modelli import RichiestaFollow
+        r = db.query(RichiestaFollow).filter(
+            RichiestaFollow.richiedente_id == n.mittente_id,
+            RichiestaFollow.destinatario_id == n.destinatario_id,
+            RichiestaFollow.stato == 'in_attesa'
+        ).first()
+        if r:
+            richiesta_id = r.id
+
     return NotificaResponse(
         id=n.id,
         tipo=n.tipo,
         testo=n.testo,
         letta=n.letta,
         mittente=_utente_response(n.mittente, db) if n.mittente else None,
+        richiesta_id=richiesta_id,
         creato_at=n.creato_at,
     )
-
