@@ -146,5 +146,6 @@ def _utente_response(u: Utente, db: Session) -> UtenteResponse:
         voti_dati= u.voti_dati,
         commenti_scritti= u.commenti_scritti,
         like_ricevuti= u.like_ricevuti,
-        posizione_classifica=posizione_attuale
+        posizione_classifica=posizione_attuale,
+        streak_ultimo_post=u.streak.ultimo_post if u.streak else None
     )

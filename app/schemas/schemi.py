@@ -70,6 +70,7 @@ class UtenteResponse(BaseModel):
     commenti_scritti: int = 0
     like_ricevuti: int = 0
     posizione_classifica : int = 0
+    streak_ultimo_post: Optional[datetime] = None
 
     model_config = {"from_attributes": True}
 
