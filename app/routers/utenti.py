@@ -231,54 +231,70 @@ def smetti_di_seguire(username: str, db: Session = Depends(get_db),
 # ============================================================
 # ACCETTA / RIFIUTA RICHIESTA
 # ============================================================
-@router.post("/richieste/{richiesta_id}/accetta")
+@router.post("/{utente_id}/accetta")
 def accetta_richiesta(
-    richiesta_id: int,
+    utente_id: int,
     db: Session = Depends(get_db),
     me: Utente = Depends(get_utente_corrente)
 ):
+    # 1. Cerchiamo la richiesta usando l'ID di chi ce l'ha mandata (utente_id)
     richiesta = db.query(RichiestaFollow).filter(
-        RichiestaFollow.id == richiesta_id,
+        RichiestaFollow.richiedente_id == utente_id,
         RichiestaFollow.destinatario_id == me.id,
         RichiestaFollow.stato == "in_attesa"
     ).first()
+    
     if not richiesta:
         raise HTTPException(status_code=404, detail="Richiesta non trovata")
 
+    # 2. Creiamo il Follow
     follow = Follow(
-        follower_id=richiesta.richiedente_id,
+        follower_id=utente_id,
         seguito_id=me.id
     )
     db.add(follow)
     richiesta.stato = "accettata"
 
+    # 3. ✨ Aggiorniamo i contatori del profilo!
+    me.num_follower += 1
+    richiedente = db.query(Utente).filter(Utente.id == utente_id).first()
+    if richiedente:
+        richiedente.num_seguiti += 1
+
+    # 4. Inviamo la notifica
     db.add(Notifica(
-        destinatario_id=richiesta.richiedente_id,
+        destinatario_id=utente_id,
         mittente_id=me.id,
         tipo="follow_accettato",
         testo=f"{me.nome} ha accettato la tua richiesta di follow",
     ))
+    
     db.commit()
-    return {"messaggio": "Richiesta accettata"}
+    # ✨ Restituiamo successo: True per Flutter
+    return {"successo": True, "messaggio": "Richiesta accettata"}
 
 
-@router.post("/richieste/{richiesta_id}/rifiuta")
+@router.post("/{utente_id}/rifiuta")
 def rifiuta_richiesta(
-    richiesta_id: int,
+    utente_id: int,
     db: Session = Depends(get_db),
     me: Utente = Depends(get_utente_corrente)
 ):
+    # Cerchiamo sempre per utente_id
     richiesta = db.query(RichiestaFollow).filter(
-        RichiestaFollow.id == richiesta_id,
+        RichiestaFollow.richiedente_id == utente_id,
         RichiestaFollow.destinatario_id == me.id,
         RichiestaFollow.stato == "in_attesa"
     ).first()
+    
     if not richiesta:
         raise HTTPException(status_code=404, detail="Richiesta non trovata")
 
     richiesta.stato = "rifiutata"
     db.commit()
-    return {"messaggio": "Richiesta rifiutata"}
+    
+    # ✨ Restituiamo successo: True per Flutter
+    return {"successo": True, "messaggio": "Richiesta rifiutata"}
 
 
 # ============================================================
