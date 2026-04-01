@@ -21,20 +21,23 @@ def get_notifiche(
     return [_notifica_response(n, db) for n in notifiche]
 
 
-@router.patch("/{notifica_id}/leggi")
-def segna_letta(
-    notifica_id: int,
-    db: Session = Depends(get_db),
+@router.put("/{notifica_id}/letta")
+def segna_singola_notifica_letta(
+    notifica_id: int, 
+    db: Session = Depends(get_db), 
     me: Utente = Depends(get_utente_corrente)
 ):
+    # Cerchiamo la notifica specifica
     n = db.query(Notifica).filter(
-        Notifica.id == notifica_id,
+        Notifica.id == notifica_id, 
         Notifica.destinatario_id == me.id
     ).first()
-    if n:
+    
+    if n and not n.letta:
         n.letta = True
         db.commit()
-    return {"messaggio": "ok"}
+        
+    return {"successo": True}
 
 
 @router.patch("/leggi-tutte")
