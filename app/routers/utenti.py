@@ -12,6 +12,7 @@ from slowapi import Limiter
 from slowapi.util import get_remote_address
 from fastapi import Request
 from app.services.storage_service import carica_e_comprimi_foto
+from app.services.fcm_service import manda_notifica
 
 limiter = Limiter(key_func=get_remote_address)
 
@@ -235,6 +236,14 @@ def segui(username: str, db: Session = Depends(get_db),
             testo=f"{me.nome} vuole seguirti",
         ))
         db.commit()
+
+        manda_notifica(
+            db=db,
+            destinatario_id=target.id,
+            titolo="Nuovo follower! 🌟",
+            corpo=f"{me.nome} ha iniziato a seguirti",
+        )
+        
         return {"messaggio": "Richiesta inviata", "stato": "richiesta_inviata"}
 
     # Account pubblico → segui direttamente

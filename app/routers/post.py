@@ -15,6 +15,7 @@ from slowapi import Limiter
 from slowapi.util import get_remote_address
 from fastapi import Request
 from app.services.storage_service import carica_e_comprimi_foto
+from app.services.fcm_service import manda_notifica
 
 limiter = Limiter(key_func=get_remote_address)
 
@@ -214,6 +215,13 @@ def metti_like(
         )) 
 
     db.commit()
+    if post.autore_id != me.id:
+        manda_notifica(
+             db=db,
+            destinatario_id=post.autore_id,
+            titolo="Nuovo like! ❤️",
+            corpo=f"{me.nome} ha messo like al tuo post",
+        )
     return {"num_like": post.num_like}
 
 
@@ -326,6 +334,16 @@ async def aggiungi_commento(
 
     db.commit()
     db.refresh(commento)
+
+    # ✨ Push notification
+    if post.autore_id != me.id:
+        manda_notifica(
+            db=db,
+            destinatario_id=post.autore_id,
+            titolo="Nuovo commento! 💬",
+            corpo=f"{me.nome}: {dati.testo[:50]}",
+        )
+    
     await verifica_badge(me, db, nuovo_commento=True)
     return _commento_response(commento, db)
 
