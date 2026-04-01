@@ -42,14 +42,19 @@ def salva_token_fcm(
     if not token:
         raise HTTPException(status_code=400, detail="Token mancante")
 
-    # Aggiorna se esiste, crea se no
+    # Cerca per TOKEN (non per utente_id) per evitare UniqueViolation
     esistente = db.query(TokenDispositivoFCM).filter(
-        TokenDispositivoFCM.utente_id == me.id
+        TokenDispositivoFCM.token == token
     ).first()
     if esistente:
-        esistente.token = token
+        # Aggiorna utente e piattaforma
+        esistente.utente_id = me.id
         esistente.piattaforma = piattaforma
     else:
+        # Rimuovi vecchi token di questo utente
+        db.query(TokenDispositivoFCM).filter(
+            TokenDispositivoFCM.utente_id == me.id
+        ).delete()
         db.add(TokenDispositivoFCM(
             utente_id=me.id,
             token=token,
