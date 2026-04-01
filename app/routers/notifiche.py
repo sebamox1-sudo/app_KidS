@@ -91,15 +91,18 @@ def count_non_lette(
 
 def _notifica_response(n: Notifica, db: Session) -> NotificaResponse:
     richiesta_id = None
+    stato_richiesta = None # ✨ 1. CREIAMO LA VARIABILE PER LO STATO
     if n.tipo == 'richiesta_follow' and n.mittente_id:
         from app.models.modelli import RichiestaFollow
+        # ✨ 2. CERCHIAMO LA RICHIESTA SENZA FILTRARE LO STATO
         r = db.query(RichiestaFollow).filter(
             RichiestaFollow.richiedente_id == n.mittente_id,
-            RichiestaFollow.destinatario_id == n.destinatario_id,
-            RichiestaFollow.stato == 'in_attesa'
+            RichiestaFollow.destinatario_id == n.destinatario_id
         ).first()
+        
         if r:
             richiesta_id = r.id
+            stato_richiesta = r.stato # ✨ 3. PRENDIAMO LO STATO ("in_attesa", "accettata", "rifiutata")
 
     return NotificaResponse(
         id=n.id,
@@ -108,5 +111,6 @@ def _notifica_response(n: Notifica, db: Session) -> NotificaResponse:
         letta=n.letta,
         mittente=_utente_response(n.mittente, db) if n.mittente else None,
         richiesta_id=richiesta_id,
+        stato_richiesta=stato_richiesta, # ✨ 4. LO SPEDIAMO A FLUTTER!
         creato_at=n.creato_at,
     )

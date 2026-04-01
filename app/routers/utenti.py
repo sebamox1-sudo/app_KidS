@@ -264,7 +264,7 @@ def accetta_richiesta(
     ).first()
     
     if not richiesta:
-        raise HTTPException(status_code=404, detail="Richiesta non trovata")
+        return {"successo": True, "messaggio": "Già processata"}  # ← invece di raise HTTPException
 
     # 2. Creiamo il Follow
     follow = Follow(

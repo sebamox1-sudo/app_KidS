@@ -244,8 +244,9 @@ class NotificaResponse(BaseModel):
     tipo: str
     testo: str
     letta: bool
-    mittente: Optional[UtenteResponse]
+    mittente: Optional[UtenteResponse] = None
     richiesta_id: Optional[int] = None
+    stato_richiesta: Optional[str] = None
     creato_at: datetime
 
     model_config = {"from_attributes": True}
