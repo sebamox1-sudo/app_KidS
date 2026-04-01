@@ -28,6 +28,36 @@ def _trova_utente(username: str, db: Session) -> Utente:
     return utente
 
 
+
+@router.post("/me/fcm-token")
+def salva_token_fcm(
+    dati: dict,
+    db: Session = Depends(get_db),
+    me: Utente = Depends(get_utente_corrente)
+):
+    from app.models.modelli import TokenDispositivoFCM
+    token = dati.get('token')
+    piattaforma = dati.get('piattaforma', 'android')
+    if not token:
+        raise HTTPException(status_code=400, detail="Token mancante")
+
+    # Aggiorna se esiste, crea se no
+    esistente = db.query(TokenDispositivoFCM).filter(
+        TokenDispositivoFCM.utente_id == me.id
+    ).first()
+    if esistente:
+        esistente.token = token
+        esistente.piattaforma = piattaforma
+    else:
+        db.add(TokenDispositivoFCM(
+            utente_id=me.id,
+            token=token,
+            piattaforma=piattaforma,
+        ))
+    db.commit()
+    return {"successo": True}
+
+
 # ============================================================
 # PROFILO UTENTE
 # ============================================================
