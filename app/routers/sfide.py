@@ -184,7 +184,6 @@ async def partecipa_sfida(
     
     me.sfide_partecipate += 1
 
-    db.commit()
 
     if sfida.autore_id != me.id:
         db.add(Notifica(
