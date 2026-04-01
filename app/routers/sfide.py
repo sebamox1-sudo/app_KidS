@@ -12,6 +12,7 @@ from app.models.modelli import (
 from app.schemas.schemi import SfidaRequest, SfidaResponse
 from app.dependencies import get_utente_corrente
 from app.routers.auth import _utente_response
+from app.services.fcm_service import manda_notifica
 import aiofiles, os, uuid
 
 router = APIRouter(prefix="/sfide", tags=["Sfide"])
@@ -193,7 +194,16 @@ async def partecipa_sfida(
             testo=f"{me.nome} ha partecipato alla tua sfida! 📸",
         ))
 
+
     db.commit()
+
+    if sfida.autore_id != me.id:
+        manda_notifica(
+            db=db,
+            destinatario_id=sfida.autore_id,
+            titolo="Nuova partecipazione! 📸",
+            corpo=f"{me.nome} ha partecipato alla tua sfida",
+        )
     return {"messaggio": "Partecipazione registrata"}
 
 
