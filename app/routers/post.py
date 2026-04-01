@@ -251,7 +251,7 @@ async def vota_post(post_id: int, dati: VotoPostRequest,
         raise HTTPException(status_code=400, detail="Hai già votato")
 
     voto = Voto(
-        utente_id=None if dati.anonimo else me.id,
+        utente_id=me.id,
         post_id=post_id,
         voto=dati.voto,
         anonimo=dati.anonimo,
