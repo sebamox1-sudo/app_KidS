@@ -261,6 +261,13 @@ def segui(username: str, db: Session = Depends(get_db),
         testo=f"{me.nome} ha iniziato a seguirti",
     ))
     db.commit()
+
+    manda_notifica(
+        db=db,
+        destinatario_id=target.id,
+        titolo="Nuovo follower! 🌟",
+        corpo=f"{me.nome} ha iniziato a seguirti",
+    )
     return {"messaggio": f"Ora segui {target.username}", "stato": "seguito"}
 
 
@@ -328,6 +335,13 @@ def accetta_richiesta(
     ))
     
     db.commit()
+
+    manda_notifica(
+        db=db,
+        destinatario_id=richiesta.richiedente_id,
+        titolo="Richiesta accettata! ✅",
+        corpo=f"{me.nome} ha accettato la tua richiesta di follow",
+    )
     # ✨ Restituiamo successo: True per Flutter
     return {"successo": True, "messaggio": "Richiesta accettata"}
 

@@ -4,32 +4,35 @@ from fastapi.staticfiles import StaticFiles
 from app.models import modelli
 from app.routers import auth, utenti, post, notifiche, sondaggi, sfide, classifica
 import os
-
-# --- IMPORT PER IL RATE LIMITING ---
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
-
 from app.database import engine, Base
+from app.services.scheduler_service import avvia_scheduler
+from contextlib import asynccontextmanager
 
-
-# ----------------------------------------------------
 modelli.Base.metadata.create_all(bind=engine)
 
 os.makedirs("uploads/post", exist_ok=True)
 os.makedirs("uploads/profili", exist_ok=True)
 os.makedirs("uploads/sfide", exist_ok=True)
 
-# 1. Inizializza il Limiter
 limiter = Limiter(key_func=get_remote_address)
+
+# ← lifespan gestisce avvio e spegnimento
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    avvia_scheduler()
+    yield
+    # Qui puoi aggiungere cleanup se serve
 
 app = FastAPI(
     title="KidS API",
     description="Backend per l'app social KidS",
     version="1.0.0",
+    lifespan=lifespan,  # ← collegato qui
 )
 
-# 2. Collega il Limiter all'app e gestisci l'errore (429 Too Many Requests)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 

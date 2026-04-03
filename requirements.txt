@@ -16,3 +16,4 @@ bcrypt>=4.2.0
 slowapi==0.1.9
 supabase
 firebase-admin
+apscheduler

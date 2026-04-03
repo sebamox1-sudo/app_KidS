@@ -285,6 +285,17 @@ async def vota_post(post_id: int, dati: VotoPostRequest,
         ))
 
     db.commit()
+
+    # Push anonima — non rivela mai chi ha votato
+    if post.autore_id != me.id:
+        manda_notifica(
+            db=db,
+            destinatario_id=post.autore_id,
+            titolo="Nuovo voto! ⭐",
+            corpo=f"Il tuo post ha ricevuto un voto di {dati.voto:.1f}",
+            # Nessun nome — sempre anonima
+        )
+
     await verifica_badge(me, db, voto_negativo=dati.voto < 5)
     return {"media_voti": post.media_voti}
 
