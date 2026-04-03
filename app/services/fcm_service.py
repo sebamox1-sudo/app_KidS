@@ -55,6 +55,7 @@ def manda_notifica(
                 priority="high",
                 notification=messaging.AndroidNotification(
                     sound="default",
+                    channel_id="default_channel",
                     click_action="FLUTTER_NOTIFICATION_CLICK",
                 ),
             ),
