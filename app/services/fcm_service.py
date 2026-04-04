@@ -51,18 +51,39 @@ def manda_notifica(
             ),
             data=dati or {},
             token=token_obj.token,
+            
+            # ✨ CONFIGURAZIONE ANDROID PREMIUM
             android=messaging.AndroidConfig(
-                priority="high",
+                priority="high", # Obbligatorio per accendere lo schermo
                 notification=messaging.AndroidNotification(
                     sound="default",
-                    channel_id="default_channel",
+                    channel_id="high_importance_channel", # ✨ Cambiato nome (vedi punto 2)
                     click_action="FLUTTER_NOTIFICATION_CLICK",
+                    default_vibrate_timings=True,
+                    default_light_settings=True,
+                ),
+            ),
+            
+            # ✨ CONFIGURAZIONE iOS PREMIUM (Mancava!)
+            apns=messaging.APNSConfig(
+                headers={
+                    "apns-priority": "10", # 10 = Massima priorità, accende lo schermo su iOS
+                },
+                payload=messaging.APNSPayload(
+                    aps=messaging.Aps(
+                        sound="default",
+                        badge=1,
+                        content_available=True, # Risveglia l'app in background
+                    ),
                 ),
             ),
         )
 
         messaging.send(message)
 
+    except firebase_admin.messaging.UnregisteredError:
+        print(f"=== FCM: Token scaduto o app disinstallata per utente {destinatario_id}. Rimuovo il token.")
+        db.query(TokenDispositivoFCM).filter(TokenDispositivoFCM.token == token_obj.token).delete()
+        db.commit()
     except Exception as e:
         print(f"Errore FCM: {e}")
-        # Non blocchiamo mai il flusso principale per un errore di notifica
