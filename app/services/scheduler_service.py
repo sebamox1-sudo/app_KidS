@@ -1,7 +1,7 @@
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from app.database import SessionLocal
 from app.models.modelli import Utente, Streak, TokenDispositivoFCM
 from app.services.fcm_service import manda_notifica
@@ -10,38 +10,42 @@ import random
 
 scheduler = BackgroundScheduler()
 
-
 def _get_db() -> Session:
     return SessionLocal()
 
 
 # ============================================================
 # JOB 1 — Reminder streak in scadenza (ogni ora)
-# Manda notifica a chi non ha postato nelle ultime 20 ore
 # ============================================================
 def check_streak_in_scadenza():
     db = _get_db()
     try:
         ora = datetime.now(timezone.utc)
-        soglia = ora - timedelta(hours=20)  # Chi non posta da 20h è a rischio
+        
+        # ✨ FIX 1: Finestra esatta di 1 ora.
+        # Così se il job gira ogni ora, un utente viene pescato UNA SOLA VOLTA (esattamente alla 20esima ora di inattività)
+        limite_massimo = ora - timedelta(hours=20) 
+        limite_minimo = ora - timedelta(hours=21)
 
         streak_a_rischio = db.query(Streak).filter(
             Streak.giorni > 0,
-            Streak.ultimo_post < soglia,
-            Streak.ultimo_post > ora - timedelta(hours=24),
+            Streak.ultimo_post <= limite_massimo,
+            Streak.ultimo_post > limite_minimo,
         ).all()
 
         for streak in streak_a_rischio:
-            ore_rimanenti = 24 - int(
-                (ora - streak.ultimo_post.replace(
-                    tzinfo=timezone.utc)).total_seconds() / 3600
-            )
+            # Calcolo le ore rimanenti reali
+            ore_trascorse = (ora - streak.ultimo_post.replace(tzinfo=timezone.utc)).total_seconds() / 3600
+            ore_rimanenti = max(1, int(24 - ore_trascorse))
+
             manda_notifica(
                 db=db,
                 destinatario_id=streak.utente_id,
                 titolo="🔥 Il tuo fuoco sta per spegnersi!",
                 corpo=f"Hai {ore_rimanenti}h per postare e mantenere la streak di {streak.giorni} giorni!",
             )
+            print(f"⏰ Inviata notifica salvataggio streak a utente {streak.utente_id}")
+            
     except Exception as e:
         print(f"Errore check_streak: {e}")
     finally:
@@ -49,8 +53,7 @@ def check_streak_in_scadenza():
 
 
 # ============================================================
-# JOB 2 — Reminder post giornaliero (ogni giorno alle 12:00)
-# Manda notifica random a utenti che non hanno postato oggi
+# JOB 2 — Reminder post giornaliero (ogni giorno)
 # ============================================================
 MESSAGGI_REMINDER = [
     ("📸 Cosa stai combinando?", "Condividi un momento della tua giornata!"),
@@ -66,20 +69,22 @@ def reminder_post_giornaliero():
         ora = datetime.now(timezone.utc)
         oggi = ora.date()
 
-        # Prendi utenti che NON hanno postato oggi
-        # e hanno un token FCM registrato
-        utenti_con_token = db.query(Utente).join(
+        # ✨ FIX 2: Usiamo joinedload(Utente.streak) per fare UNA SINGOLA QUERY massiva!
+        # Questo salva il database da crash istantanei.
+        utenti_con_token = db.query(Utente).options(
+            joinedload(Utente.streak)
+        ).join(
             TokenDispositivoFCM,
             TokenDispositivoFCM.utente_id == Utente.id
         ).all()
 
+        inviate = 0
         for utente in utenti_con_token:
             streak = utente.streak
             if streak and streak.ultimo_post:
-                ultimo = streak.ultimo_post.replace(
-                    tzinfo=timezone.utc).date()
+                ultimo = streak.ultimo_post.replace(tzinfo=timezone.utc).date()
                 if ultimo == oggi:
-                    continue  # Ha già postato oggi, skip
+                    continue  # Ha già postato oggi, lo saltiamo in silenzio
 
             titolo, corpo = random.choice(MESSAGGI_REMINDER)
             manda_notifica(
@@ -88,6 +93,10 @@ def reminder_post_giornaliero():
                 titolo=titolo,
                 corpo=corpo,
             )
+            inviate += 1
+            
+        print(f"🌞 Inviati {inviate} reminder giornalieri.")
+            
     except Exception as e:
         print(f"Errore reminder: {e}")
     finally:
@@ -106,7 +115,7 @@ def avvia_scheduler():
         replace_existing=True,
     )
 
-    # Reminder giornaliero alle 12:00 UTC (14:00 ora italiana)
+    # Reminder giornaliero alle 12:00 UTC (14:00 in Italia durante l'ora legale CEST)
     scheduler.add_job(
         reminder_post_giornaliero,
         CronTrigger(hour=12, minute=0),
