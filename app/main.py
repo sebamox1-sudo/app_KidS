@@ -9,6 +9,7 @@ from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from app.database import engine, Base
 from app.services.scheduler_service import avvia_scheduler
+from app.routers import esplora
 from contextlib import asynccontextmanager
 
 modelli.Base.metadata.create_all(bind=engine)
@@ -53,6 +54,7 @@ app.include_router(notifiche.router)
 app.include_router(sondaggi.router)
 app.include_router(sfide.router)
 app.include_router(classifica.router)
+app.include_router(esplora.router)
 
 @app.get("/")
 def root():
