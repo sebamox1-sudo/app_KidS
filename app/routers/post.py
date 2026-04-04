@@ -378,6 +378,60 @@ def elimina_post(post_id: int, db: Session = Depends(get_db),
     db.commit()
     return {"messaggio": "Post eliminato"}
 
+# ============================================================
+# ESPLORA HASHTAG
+# ============================================================
+@router.get("/esplora/hashtag/{tag}", response_model=List[PostResponse])
+@limiter.limit("20/minute")
+def esplora_hashtag(
+    request: Request,
+    tag: str, 
+    skip: int = 0, 
+    limit: int = 30,
+    db: Session = Depends(get_db),
+    me: Utente = Depends(get_utente_corrente)
+):
+    # Puliamo il tag (togliamo il # se l'utente lo ha inserito nell'URL)
+    tag_pulito = tag.replace("#", "").strip()
+
+    if not tag_pulito:
+        return []
+
+    # Cerchiamo tutti i post pubblici (o dei nostri amici) che contengono l'hashtag
+    from app.models.modelli import Utente as UtenteModel
+    
+    post_trovati = db.query(Post).join(UtenteModel).filter(
+        UtenteModel.is_privato == False, # Mostriamo solo post di account pubblici
+        Post.hashtag.ilike(f"%{tag_pulito}%")
+    ).order_by(Post.creato_at.desc()).offset(skip).limit(limit).all()
+
+    if not post_trovati:
+        return []
+
+    # ── BATCH: Precarichiamo like e voti per non far crashare il server ──
+    post_ids = [p.id for p in post_trovati]
+
+    miei_like = set(
+        row.post_id for row in
+        db.query(Like.post_id).filter(
+            Like.utente_id == me.id,
+            Like.post_id.in_(post_ids)
+        ).all()
+    )
+
+    miei_voti = {
+        row.post_id: row.voto for row in
+        db.query(Voto.post_id, Voto.voto).filter(
+            Voto.utente_id == me.id,
+            Voto.post_id.in_(post_ids)
+        ).all()
+    }
+
+    return [
+        _post_response_batch(p, miei_like, miei_voti, db)
+        for p in post_trovati
+    ]
+
 
 # ============================================================
 # HELPERS
