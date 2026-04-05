@@ -147,8 +147,27 @@ def get_profilo(username: str, db: Session = Depends(get_db),
     return res
 
 # ============================================================
+# ELIMINA PROFILO
+# ============================================================
+
+@router.delete("/me/account")
+def elimina_account(
+    db: Session = Depends(get_db),
+    me: Utente = Depends(get_utente_corrente)
+):
+    """
+    Elimina permanentemente l'account e tutti i dati associati.
+    Grazie a cascade="all, delete" nel modello, SQLAlchemy
+    cancella automaticamente post, like, commenti, follow, ecc.
+    """
+    db.delete(me)
+    db.commit()
+    return {"messaggio": "Account eliminato definitivamente"}
+
+# ============================================================
 # AGGIORNA PROFILO
 # ============================================================
+
 @router.patch("/me/profilo", response_model=UtenteResponse)
 def aggiorna_profilo(dati: AggiornaProfilo, db: Session = Depends(get_db),
                      me: Utente = Depends(get_utente_corrente)):
