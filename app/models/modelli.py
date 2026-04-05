@@ -301,3 +301,15 @@ class RichiestaFollow(Base):
 
     richiedente = relationship("Utente", foreign_keys=[richiedente_id])
     destinatario = relationship("Utente", foreign_keys=[destinatario_id])
+
+class RefreshToken(Base):
+    __tablename__ = "refresh_tokens"
+ 
+    id = Column(Integer, primary_key=True)
+    utente_id = Column(Integer, ForeignKey("utenti.id"), nullable=False)
+    token = Column(String(200), unique=True, nullable=False, index=True)
+    scadenza = Column(DateTime(timezone=True), nullable=False)
+    revocato = Column(Boolean, default=False)
+    creato_at = Column(DateTime(timezone=True), server_default=func.now())
+ 
+    utente = relationship("Utente")
