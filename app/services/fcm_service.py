@@ -26,54 +26,59 @@ def manda_notifica(
     titolo: str,
     corpo: str,
     dati: dict = None,
+    tipo: str = "generico",
+    extra: dict = None,
 ):
-    """Manda una push notification a un utente specifico."""
     try:
         _inizializza()
 
-        print(f"=== FCM: mando a utente {destinatario_id}: {titolo}")
-
-        # Trova il token FCM del destinatario
         token_obj = db.query(TokenDispositivoFCM).filter(
             TokenDispositivoFCM.utente_id == destinatario_id
         ).first()
-
         if not token_obj:
-            print(f"=== FCM: nessun token per utente {destinatario_id}")
-            return  # Utente non ha registrato il token
+            return
 
-        print(f"=== FCM: token trovato: {token_obj.token[:20]}...")
+        # Costruisci il payload data per il deep linking
+        # Firebase richiede che tutti i valori siano stringhe
+        payload_data = {
+            "tipo": tipo,
+            "post_id": str(extra.get("post_id", "") if extra else ""),
+            "sfida_id": str(extra.get("sfida_id", "") if extra else ""),
+            "tema": str(extra.get("tema", "") if extra else ""),
+            "mittente_id": str(extra.get("mittente_id", "") if extra else ""),
+            "mittente_username": str(extra.get("mittente_username", "") if extra else ""),
+            "mittente_nome": str(extra.get("mittente_nome", "") if extra else ""),
+            "mittente_foto": str(extra.get("mittente_foto", "") if extra else ""),
+        }
+
+        # Merge con dati custom se presenti
+        if dati:
+            payload_data.update({k: str(v) for k, v in dati.items()})
 
         message = messaging.Message(
             notification=messaging.Notification(
                 title=titolo,
                 body=corpo,
             ),
-            data=dati or {},
+            data=payload_data,
             token=token_obj.token,
-            
-            # ✨ CONFIGURAZIONE ANDROID PREMIUM
             android=messaging.AndroidConfig(
-                priority="high", # Obbligatorio per accendere lo schermo
+                priority="high",
                 notification=messaging.AndroidNotification(
                     sound="default",
-                    channel_id="high_importance_channel", # ✨ Cambiato nome (vedi punto 2)
+                    channel_id="high_importance_channel",
                     click_action="FLUTTER_NOTIFICATION_CLICK",
                     default_vibrate_timings=True,
                     default_light_settings=True,
                 ),
             ),
-            
-            # ✨ CONFIGURAZIONE iOS PREMIUM (Mancava!)
             apns=messaging.APNSConfig(
-                headers={
-                    "apns-priority": "10", # 10 = Massima priorità, accende lo schermo su iOS
-                },
+                headers={"apns-priority": "10"},
                 payload=messaging.APNSPayload(
                     aps=messaging.Aps(
                         sound="default",
                         badge=1,
-                        content_available=True, # Risveglia l'app in background
+                        content_available=True,
                     ),
                 ),
             ),
@@ -82,8 +87,9 @@ def manda_notifica(
         messaging.send(message)
 
     except firebase_admin.messaging.UnregisteredError:
-        print(f"=== FCM: Token scaduto o app disinstallata per utente {destinatario_id}. Rimuovo il token.")
-        db.query(TokenDispositivoFCM).filter(TokenDispositivoFCM.token == token_obj.token).delete()
+        db.query(TokenDispositivoFCM).filter(
+            TokenDispositivoFCM.token == token_obj.token
+        ).delete()
         db.commit()
     except Exception as e:
         print(f"Errore FCM: {e}")

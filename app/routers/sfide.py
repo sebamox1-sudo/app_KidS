@@ -118,6 +118,22 @@ def crea_sfida(
                 testo=f"{me.nome} ti ha sfidato: {dati.tema} ⚡",
             ))
 
+            manda_notifica(
+    db=db,
+    destinatario_id=amico.id,
+    titolo="⚡ Nuova sfida!",
+    corpo=f"{me.nome} ti ha sfidato: {dati.tema[:40]}",
+    tipo="sfida",
+    extra={
+        "sfida_id": sfida.id,
+        "tema": dati.tema,
+        "mittente_id": me.id,
+        "mittente_username": me.username,
+        "mittente_nome": me.nome,
+        "mittente_foto": me.foto_profilo or "",
+    },
+)
+
         if not amici_invitati:
             raise HTTPException(
                 status_code=400,
@@ -132,6 +148,21 @@ def crea_sfida(
                 tipo="sfida",
                 testo=f"{me.nome} ha lanciato una sfida: {dati.tema} ⚡",
             ))
+
+            manda_notifica(
+    db=db,
+    destinatario_id=follow.follower_id,
+    titolo="⚡ Nuova sfida!",
+    corpo=f"{me.nome} ha lanciato una sfida: {dati.tema[:40]}",
+    tipo="sfida",
+    extra={
+        "sfida_id": sfida.id,
+        "tema": dati.tema,
+        "mittente_id": me.id,
+        "mittente_username": me.username,
+        "mittente_nome": me.nome,
+    },
+)
 
     db.commit()
     db.refresh(sfida)
@@ -198,11 +229,20 @@ async def partecipa_sfida(
 
     if sfida.autore_id != me.id:
         manda_notifica(
-            db=db,
-            destinatario_id=sfida.autore_id,
-            titolo="Nuova partecipazione! 📸",
-            corpo=f"{me.nome} ha partecipato alla tua sfida",
-        )
+    db=db,
+    destinatario_id=sfida.autore_id,
+    titolo="Nuova partecipazione! 📸",
+    corpo=f"{me.nome} ha partecipato alla tua sfida",
+    tipo="partecipazione_sfida",
+    extra={
+        "sfida_id": sfida.id,
+        "tema": sfida.tema,
+        "mittente_id": me.id,
+        "mittente_username": me.username,
+        "mittente_nome": me.nome,
+        "mittente_foto": me.foto_profilo or "",
+    },
+)
     return {"messaggio": "Partecipazione registrata"}
 
 

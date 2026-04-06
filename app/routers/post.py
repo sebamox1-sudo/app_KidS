@@ -216,12 +216,14 @@ def metti_like(
 
     db.commit()
     if post.autore_id != me.id:
-        manda_notifica(
-             db=db,
-            destinatario_id=post.autore_id,
-            titolo="Nuovo like! ❤️",
-            corpo=f"{me.nome} ha messo like al tuo post",
-        )
+        manda_notifica(db, post.autore_id,
+            "❤️ Nuovo like!",
+            f"{me.nome} ha messo like al tuo post",
+            tipo="like",
+            extra={"post_id": post.id, "mittente_username": me.username,
+                "mittente_nome": me.nome, "mittente_id": me.id,
+                "mittente_foto": me.foto_profilo or ""} 
+            )
     return {"num_like": post.num_like}
 
 
@@ -348,12 +350,12 @@ async def aggiungi_commento(
 
     # ✨ Push notification
     if post.autore_id != me.id:
-        manda_notifica(
-            db=db,
-            destinatario_id=post.autore_id,
-            titolo="Nuovo commento! 💬",
-            corpo=f"{me.nome}: {dati.testo[:50]}",
-        )
+        manda_notifica(db, post.autore_id,
+    "💬 Nuovo commento!",
+    f"{me.nome}: {dati.testo[:50]}",
+    tipo="commento",
+    extra={"post_id": post.id, "mittente_username": me.username,
+           "mittente_nome": me.nome, "mittente_id": me.id})
     
     await verifica_badge(me, db, nuovo_commento=True)
     return _commento_response(commento, db)

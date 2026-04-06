@@ -261,12 +261,13 @@ def segui(username: str, db: Session = Depends(get_db),
         ))
         db.commit()
 
-        manda_notifica(
-            db=db,
-            destinatario_id=target.id,
-            titolo="Nuovo follower! 🌟",
-            corpo=f"{me.nome} ha iniziato a seguirti",
-        )
+        manda_notifica(db, target.id,
+    "👤 Nuovo follower!",
+    f"{me.nome} ha iniziato a seguirti",
+    tipo="follow",
+    extra={"mittente_username": me.username,
+           "mittente_nome": me.nome, "mittente_id": me.id,
+           "mittente_foto": me.foto_profilo or ""})
         
         return {"messaggio": "Richiesta inviata", "stato": "richiesta_inviata"}
 
