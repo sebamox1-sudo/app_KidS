@@ -134,6 +134,7 @@ def get_trending(
             "tipo": "sondaggio",
             "media_url": None,
             "testo": sondaggio.domanda,
+            "opzioni": [{"id": o.id, "testo": o.testo} for o in sondaggio.opzioni],
             "like_count": 0,
             "engagement": num_voti,
             "totale_voti": num_voti,
