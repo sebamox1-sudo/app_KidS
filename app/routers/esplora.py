@@ -4,9 +4,10 @@ from sqlalchemy import func, desc
 from datetime import datetime, timezone, timedelta
 from typing import List
 from app.database import get_db
-from app.models.modelli import Post, Sondaggio, Sfida, Like, Utente, Commento
+from app.models.modelli import Post, Sondaggio, Sfida, Like, Utente, Commento, VotoSondaggio
 from app.dependencies import get_utente_corrente
 from app.routers.auth import _utente_response
+import json
 
 router = APIRouter(prefix="/esplora", tags=["Esplora"])
 
@@ -128,16 +129,31 @@ def get_trending(
     )
 
     for sondaggio in sondaggi_trending:
-        num_voti = len(sondaggio.voti)
+        opzioni = json.loads(sondaggio.opzioni)
+        voti = db.query(VotoSondaggio).filter(
+            VotoSondaggio.sondaggio_id == sondaggio.id
+        ).all()
+
+        voti_per_opzione = [
+            len([v for v in voti if v.opzione_index == i])
+            for i in range(len(opzioni))
+        ]
+
+        # Controlla se l'utente corrente ha già votato
+        mio_voto = next(
+            (v for v in voti if v.utente_id == me.id), None
+        )
+
         risultati.append({
             "id": sondaggio.id,
             "tipo": "sondaggio",
-            "media_url": None,
             "testo": sondaggio.domanda,
-            "opzioni": [{"id": o.id, "testo": o.testo} for o in sondaggio.opzioni],
-            "like_count": 0,
-            "engagement": num_voti,
-            "totale_voti": num_voti,
+            "opzioni": opzioni,                    # ← lista opzioni
+            "voti_per_opzione": voti_per_opzione,  # ← voti per ogni opzione
+            "totale_voti": len(voti),
+            "ho_votato": mio_voto is not None,     # ← già votato?
+            "mia_opzione": mio_voto.opzione_index if mio_voto else None,
+            "engagement": len(voti),
             "creato_at": sondaggio.creato_at.isoformat(),
             "autore": {
                 "id": sondaggio.autore.id,
