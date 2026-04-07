@@ -72,6 +72,7 @@ class UtenteResponse(BaseModel):
     like_ricevuti: int = 0
     posizione_classifica : int = 0
     streak_ultimo_post: Optional[datetime] = None
+    num_amici: int = 0
 
     model_config = {"from_attributes": True}
 
