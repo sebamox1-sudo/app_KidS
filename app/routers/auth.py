@@ -166,6 +166,11 @@ def _utente_response(u: Utente, db: Session) -> UtenteResponse:
         Post.autore_id == u.id
     ).scalar() or 0
 
+     # Amici = follow reciproco
+    seguiti_ids = {f.seguito_id for f in u.seguiti_rel}
+    follower_ids = {f.follower_id for f in u.follower_rel}
+    num_amici = len(seguiti_ids & follower_ids)
+
     return UtenteResponse(
         id=u.id,
         nome=u.nome,
@@ -180,4 +185,5 @@ def _utente_response(u: Utente, db: Session) -> UtenteResponse:
         streak_giorni=u.streak.giorni if u.streak else 0,
         onboarding_completato=u.onboarding_completato,
         creato_at=u.creato_at,
+        num_amici=num_amici,
     )
