@@ -29,6 +29,41 @@ def get_classifica(
     } for i, u in enumerate(utenti)]
 
 
+@router.get("/amici")
+def get_classifica_amici(
+    limit: int = 50,
+    db: Session = Depends(get_db),
+    me: Utente = Depends(get_utente_corrente),
+):
+    """Classifica solo tra gli utenti che segui + te stesso."""
+ 
+    # Prendi gli ID degli utenti che seguo
+    seguiti_ids = [f.seguito_id for f in me.seguiti_rel]
+    seguiti_ids.append(me.id)  # Includi te stesso
+ 
+    # Ordina per streak decrescente
+    utenti = (
+        db.query(Utente)
+        .outerjoin(Streak)
+        .filter(Utente.id.in_(seguiti_ids))
+        .order_by(
+            case((Streak.giorni != None, Streak.giorni), else_=0).desc()
+        )
+        .limit(limit)
+        .all()
+    )
+ 
+    return [
+        {
+            "posizione": i + 1,
+            "utente": _utente_response(u, db),
+            "streak": u.streak.giorni if u.streak else 0,
+            "sono_io": u.id == me.id,
+        }
+        for i, u in enumerate(utenti)
+    ]
+
+
 @router.get("/mia-posizione")
 def get_mia_posizione(
     db: Session = Depends(get_db),
