@@ -114,9 +114,18 @@ async def pubblica_post(
 
     db.commit()
     db.refresh(post)
-    await verifica_badge(me, db)
-    
-    return _post_response(post, me.id, db)
+
+    # Verifica badge e ottieni quelli nuovi
+    nuovi_badge = await verifica_badge(me, db)
+    # Streak aggiornata
+    streak_giorni = me.streak.giorni if me.streak else 0
+    # Ritorna post + streak + badge nuovi
+    risposta = _post_response(post, me.id, db)
+    return {
+        **risposta.dict(),
+        "streak_giorni": streak_giorni,
+        "nuovi_badge": nuovi_badge,  # lista di stringhe tipo ["creatore", "costante"]
+    }
 
 
 # ============================================================
