@@ -108,9 +108,52 @@ def get_miei_seguiti(
     db: Session = Depends(get_db),
     me: Utente = Depends(get_utente_corrente)
 ):
-    """Lista utenti che io seguo — usata per selezionare amici nelle sfide."""
+    """Lista utenti che io seguo."""
     seguiti_ids = [f.seguito_id for f in me.seguiti_rel]
     utenti = db.query(Utente).filter(Utente.id.in_(seguiti_ids)).all()
+    return [_utente_response(u, db) for u in utenti]
+
+
+@router.get("/me/follower")
+def get_miei_follower(
+    db: Session = Depends(get_db),
+    me: Utente = Depends(get_utente_corrente)
+):
+    """Lista utenti che mi seguono."""
+    follower_ids = [f.follower_id for f in me.follower_rel]
+    utenti = db.query(Utente).filter(Utente.id.in_(follower_ids)).all()
+    return [_utente_response(u, db) for u in utenti]
+
+
+@router.get("/me/amici")
+def get_miei_amici(
+    db: Session = Depends(get_db),
+    me: Utente = Depends(get_utente_corrente)
+):
+    """
+    Amici veri = follow reciproco.
+    Io seguo loro E loro seguono me.
+    """
+    seguiti_ids = {f.seguito_id for f in me.seguiti_rel}
+    follower_ids = {f.follower_id for f in me.follower_rel}
+    # Intersezione = follow reciproco
+    amici_ids = seguiti_ids & follower_ids
+    utenti = db.query(Utente).filter(Utente.id.in_(amici_ids)).all()
+    return [_utente_response(u, db) for u in utenti]
+
+
+@router.get("/{username}/follower")
+def get_follower_di_utente(
+    username: str,
+    db: Session = Depends(get_db),
+    me: Utente = Depends(get_utente_corrente)
+):
+    """Lista follower di un utente pubblico."""
+    utente = _trova_utente(username, db)
+    if utente.is_privato and utente.id != me.id:
+        raise HTTPException(status_code=403, detail="Profilo privato")
+    follower_ids = [f.follower_id for f in utente.follower_rel]
+    utenti = db.query(Utente).filter(Utente.id.in_(follower_ids)).all()
     return [_utente_response(u, db) for u in utenti]
 
 

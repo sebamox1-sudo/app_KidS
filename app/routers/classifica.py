@@ -35,17 +35,18 @@ def get_classifica_amici(
     db: Session = Depends(get_db),
     me: Utente = Depends(get_utente_corrente),
 ):
-    """Classifica solo tra gli utenti che segui + te stesso."""
+    """Classifica tra amici veri = follow reciproco."""
  
-    # Prendi gli ID degli utenti che seguo
-    seguiti_ids = [f.seguito_id for f in me.seguiti_rel]
-    seguiti_ids.append(me.id)  # Includi te stesso
+    seguiti_ids = {f.seguito_id for f in me.seguiti_rel}
+    follower_ids = {f.follower_id for f in me.follower_rel}
  
-    # Ordina per streak decrescente
+    # Solo follow reciproco + me stesso
+    amici_ids = (seguiti_ids & follower_ids) | {me.id}
+ 
     utenti = (
         db.query(Utente)
         .outerjoin(Streak)
-        .filter(Utente.id.in_(seguiti_ids))
+        .filter(Utente.id.in_(amici_ids))
         .order_by(
             case((Streak.giorni != None, Streak.giorni), else_=0).desc()
         )
