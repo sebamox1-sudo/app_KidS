@@ -198,6 +198,12 @@ def elimina_account(
     db: Session = Depends(get_db),
     me: Utente = Depends(get_utente_corrente)
 ):
+    
+    # FIX: elimina esplicitamente i follow prima del cascade
+    db.query(Follow).filter(
+        (Follow.follower_id == me.id) | (Follow.seguito_id == me.id)
+    ).delete(synchronize_session=False)
+
     """
     Elimina permanentemente l'account e tutti i dati associati.
     Grazie a cascade="all, delete" nel modello, SQLAlchemy
