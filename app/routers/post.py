@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from app.database import get_db
-from app.models.modelli import Post, Like, Voto, Commento, Notifica, Streak
+from app.models.modelli import Post, Like, Voto, Commento, Notifica, Streak, BloccoUtente
 from app.schemas.schemi import PostResponse, VotoPostRequest, CommentoRequest, CommentoResponse
 from app.dependencies import get_utente_corrente
 from app.models.modelli import Utente
@@ -16,8 +16,6 @@ from slowapi.util import get_remote_address
 from fastapi import Request
 from app.services.storage_service import carica_e_comprimi_foto
 from app.services.fcm_service import manda_notifica
-# NEW: import broadcast WebSocket commenti
-from app.routers.ws_commenti import broadcast_commento
 
 limiter = Limiter(key_func=get_remote_address)
 
@@ -140,6 +138,10 @@ def get_feed(skip: int = 0, limit: int = 20,
 
     seguiti_ids = [f.seguito_id for f in me.seguiti_rel]
 
+    # Escludi gli utenti in relazione di blocco (reciproca)
+    from app.routers.blocco_segnalazioni import get_ids_bloccati
+    ids_bloccati = get_ids_bloccati(me, db)
+
     from app.models.modelli import Utente as UtenteModel
     autori_visibili = (
         db.query(UtenteModel.id)
@@ -148,6 +150,8 @@ def get_feed(skip: int = 0, limit: int = 20,
             (UtenteModel.id.in_(seguiti_ids)) |
             (UtenteModel.id == me.id)
         )
+        # Escludi utenti bloccati o che mi hanno bloccato
+        .filter(UtenteModel.id.notin_(ids_bloccati))
         .all()
     )
     autori_ids = [u.id for u in autori_visibili]
@@ -156,7 +160,7 @@ def get_feed(skip: int = 0, limit: int = 20,
 
     post = db.query(Post).filter(
     Post.autore_id.in_(autori_ids),
-    Post.creato_at > ventiquattro_ore_fa  # ← solo ultimi 24h
+    Post.creato_at > ventiquattro_ore_fa
     ).order_by(Post.creato_at.desc()).offset(skip).limit(limit).all()
 
     if not post:
@@ -360,9 +364,14 @@ async def vota_post(post_id: int, dati: VotoPostRequest,
 @router.get("/{post_id}/commenti", response_model=List[CommentoResponse])
 def get_commenti(post_id: int, db: Session = Depends(get_db),
                  me: Utente = Depends(get_utente_corrente)):
+    # Escludi commenti di utenti bloccati o che mi hanno bloccato
+    from app.routers.blocco_segnalazioni import get_ids_bloccati
+    ids_bloccati = get_ids_bloccati(me, db)
+
     commenti = db.query(Commento).filter(
         Commento.post_id == post_id,
-        Commento.risposta_a_id == None
+        Commento.risposta_a_id == None,
+        Commento.autore_id.notin_(ids_bloccati),
     ).order_by(Commento.creato_at).all()
     return [_commento_response(c, db) for c in commenti]
 
@@ -399,21 +408,6 @@ async def aggiungi_commento(
 
     db.commit()
     db.refresh(commento)
-
-    # NEW: notifica in tempo reale tutti i client connessi a questo post
-    await broadcast_commento(post_id, {
-        "type": "new_comment",
-        "post_id": post_id,
-        "comment": {
-            "id": commento.id,
-            "testo": commento.testo,
-            "autore": me.nome,
-            "foto_profilo": me.foto_profilo,
-            "posizione_classifica": 0,
-            "timestamp": commento.creato_at.isoformat(),
-            "risposte": [],
-        }
-    })
 
     # ✨ Push notification
     if post.autore_id != me.id:

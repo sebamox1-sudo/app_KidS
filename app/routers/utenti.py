@@ -108,52 +108,9 @@ def get_miei_seguiti(
     db: Session = Depends(get_db),
     me: Utente = Depends(get_utente_corrente)
 ):
-    """Lista utenti che io seguo."""
+    """Lista utenti che io seguo — usata per selezionare amici nelle sfide."""
     seguiti_ids = [f.seguito_id for f in me.seguiti_rel]
     utenti = db.query(Utente).filter(Utente.id.in_(seguiti_ids)).all()
-    return [_utente_response(u, db) for u in utenti]
-
-
-@router.get("/me/follower")
-def get_miei_follower(
-    db: Session = Depends(get_db),
-    me: Utente = Depends(get_utente_corrente)
-):
-    """Lista utenti che mi seguono."""
-    follower_ids = [f.follower_id for f in me.follower_rel]
-    utenti = db.query(Utente).filter(Utente.id.in_(follower_ids)).all()
-    return [_utente_response(u, db) for u in utenti]
-
-
-@router.get("/me/amici")
-def get_miei_amici(
-    db: Session = Depends(get_db),
-    me: Utente = Depends(get_utente_corrente)
-):
-    """
-    Amici veri = follow reciproco.
-    Io seguo loro E loro seguono me.
-    """
-    seguiti_ids = {f.seguito_id for f in me.seguiti_rel}
-    follower_ids = {f.follower_id for f in me.follower_rel}
-    # Intersezione = follow reciproco
-    amici_ids = seguiti_ids & follower_ids
-    utenti = db.query(Utente).filter(Utente.id.in_(amici_ids)).all()
-    return [_utente_response(u, db) for u in utenti]
-
-
-@router.get("/{username}/follower")
-def get_follower_di_utente(
-    username: str,
-    db: Session = Depends(get_db),
-    me: Utente = Depends(get_utente_corrente)
-):
-    """Lista follower di un utente pubblico."""
-    utente = _trova_utente(username, db)
-    if utente.is_privato and utente.id != me.id:
-        raise HTTPException(status_code=403, detail="Profilo privato")
-    follower_ids = [f.follower_id for f in utente.follower_rel]
-    utenti = db.query(Utente).filter(Utente.id.in_(follower_ids)).all()
     return [_utente_response(u, db) for u in utenti]
 
 
@@ -198,12 +155,6 @@ def elimina_account(
     db: Session = Depends(get_db),
     me: Utente = Depends(get_utente_corrente)
 ):
-    
-    # FIX: elimina esplicitamente i follow prima del cascade
-    db.query(Follow).filter(
-        (Follow.follower_id == me.id) | (Follow.seguito_id == me.id)
-    ).delete(synchronize_session=False)
-
     """
     Elimina permanentemente l'account e tutti i dati associati.
     Grazie a cascade="all, delete" nel modello, SQLAlchemy
@@ -466,43 +417,39 @@ def get_seguiti_di_utente(username: str, db: Session = Depends(get_db)):
 # ============================================================
 
 @router.get("/ricerca/{query}")
-@limiter.limit("20/minute") # <--- Aggiungi questo decoratore
+@limiter.limit("20/minute")
 def cerca_utenti(
     request: Request,
     query: str,
     db: Session = Depends(get_db),
     me: Utente = Depends(get_utente_corrente)):
-    # Normalizza: rimuovi @ e spazi
     q = query.strip().lstrip("@")
-    # Ritorna il formato standard che Flutter si aspetta se la query è vuota
     if len(q) < 1:
         return []
-    # 1) trova gli utenti
+
+    # Escludi utenti bloccati reciprocamente
+    from app.routers.blocco_segnalazioni import get_ids_bloccati
+    ids_bloccati = get_ids_bloccati(me, db)
+
     utenti = db.query(Utente).filter(
         (Utente.username.ilike(f"%{q}%")) |
         (Utente.nome.ilike(f"%{q}%"))
+    ).filter(
+        Utente.id.notin_(ids_bloccati)  # Escludi bloccati
     ).limit(20).all()
 
     risultato_finale = []
-
     for u in utenti:
-        # 2. Ottieni i dati base dell'utente usando la tua funzione esistente
         dati_base = _utente_response(u, db)
-        # Se la tua funzione restituisce un modello Pydantic, convertilo in dizionario:
         if hasattr(dati_base, "dict"):
             dati_base = dati_base.dict()
-        # 3. Cerca gli ultimi 3 post di questo utente
         ultimi_post = db.query(Post).filter(
             Post.autore_id == u.id
         ).order_by(Post.creato_at.desc()).limit(3).all()
-        # 4. Estrai solo i link delle foto (assicurati che il campo si chiami url_foto o adattalo al tuo db)
         urls_foto = [post.foto_principale for post in ultimi_post if post.foto_principale]
-        # 5. Inserisci il nuovo campo magico per Flutter
         dati_base["ultime_tre_foto"] = urls_foto
-
         risultato_finale.append(dati_base)
 
-    # 6. Ritorna il formato esatto che Flutter decodifica ("successo" e "dati")
     return risultato_finale
 
 

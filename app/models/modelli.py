@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, Boolean, DateTime, ForeignKey, Text
+from sqlalchemy import Column, Integer, String, Float, Boolean, DateTime, ForeignKey, Text, UniqueConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.database import Base
@@ -69,8 +69,8 @@ class Follow(Base):
     __tablename__ = "follow"
 
     id = Column(Integer, primary_key=True)
-    follower_id = Column(Integer, ForeignKey("utenti.id", ondelete="CASCADE"), nullable=False)
-    seguito_id = Column(Integer, ForeignKey("utenti.id", ondelete="CASCADE"), nullable=False)
+    follower_id = Column(Integer, ForeignKey("utenti.id"), nullable=False)
+    seguito_id = Column(Integer, ForeignKey("utenti.id"), nullable=False)
     creato_at = Column(DateTime(timezone=True), server_default=func.now())
 
     follower = relationship("Utente", foreign_keys=[follower_id], back_populates="seguiti_rel")
@@ -81,7 +81,7 @@ class Post(Base):
     __tablename__ = "post"
 
     id = Column(Integer, primary_key=True, index=True)
-    autore_id = Column(Integer, ForeignKey("utenti.id", ondelete="CASCADE"), nullable=False)
+    autore_id = Column(Integer, ForeignKey("utenti.id"), nullable=False)
     foto_principale = Column(String(500), nullable=True)
     foto_selfie = Column(String(500), nullable=True)
     testo = Column(Text, nullable=True)
@@ -109,8 +109,8 @@ class Like(Base):
     __tablename__ = "like"
 
     id = Column(Integer, primary_key=True)
-    utente_id = Column(Integer, ForeignKey("utenti.id", ondelete="CASCADE"), nullable=False)
-    post_id = Column(Integer, ForeignKey("post.id", ondelete="CASCADE"), nullable=False)
+    utente_id = Column(Integer, ForeignKey("utenti.id"), nullable=False)
+    post_id = Column(Integer, ForeignKey("post.id"), nullable=False)
     creato_at = Column(DateTime(timezone=True), server_default=func.now())
 
     utente = relationship("Utente", back_populates="like")
@@ -121,8 +121,8 @@ class Voto(Base):
     __tablename__ = "voti"
 
     id = Column(Integer, primary_key=True)
-    utente_id = Column(Integer, ForeignKey("utenti.id", ondelete="SET NULL"), nullable=True)
-    post_id = Column(Integer, ForeignKey("post.id", ondelete="CASCADE"), nullable=False)
+    utente_id = Column(Integer, ForeignKey("utenti.id"), nullable=True)
+    post_id = Column(Integer, ForeignKey("post.id"), nullable=False)
     voto = Column(Float, nullable=False)
     anonimo = Column(Boolean, default=False)
     creato_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -135,10 +135,10 @@ class Commento(Base):
     __tablename__ = "commenti"
 
     id = Column(Integer, primary_key=True, index=True)
-    autore_id = Column(Integer, ForeignKey("utenti.id", ondelete="CASCADE"), nullable=False)
-    post_id = Column(Integer, ForeignKey("post.id", ondelete="CASCADE"), nullable=False)
+    autore_id = Column(Integer, ForeignKey("utenti.id"), nullable=False)
+    post_id = Column(Integer, ForeignKey("post.id"), nullable=False)
     testo = Column(Text, nullable=False)
-    risposta_a_id = Column(Integer, ForeignKey("commenti.id", ondelete="CASCADE"), nullable=True)
+    risposta_a_id = Column(Integer, ForeignKey("commenti.id"), nullable=True)
     creato_at = Column(DateTime(timezone=True), server_default=func.now())
 
     autore = relationship("Utente", back_populates="commenti")
@@ -150,7 +150,7 @@ class Sondaggio(Base):
     __tablename__ = "sondaggi"
 
     id = Column(Integer, primary_key=True, index=True)
-    autore_id = Column(Integer, ForeignKey("utenti.id", ondelete="CASCADE"), nullable=False)
+    autore_id = Column(Integer, ForeignKey("utenti.id"), nullable=False)
     domanda = Column(String(200), nullable=False)
     opzioni = Column(Text, nullable=False)
     creato_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -165,8 +165,8 @@ class VotoSondaggio(Base):
     __tablename__ = "voti_sondaggio"
 
     id = Column(Integer, primary_key=True)
-    utente_id = Column(Integer, ForeignKey("utenti.id", ondelete="SET NULL"), nullable=True)
-    sondaggio_id = Column(Integer, ForeignKey("sondaggi.id", ondelete="CASCADE"), nullable=False)
+    utente_id = Column(Integer, ForeignKey("utenti.id"), nullable=True)
+    sondaggio_id = Column(Integer, ForeignKey("sondaggi.id"), nullable=False)
     opzione_index = Column(Integer, nullable=False)
     anonimo = Column(Boolean, default=False)
     creato_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -178,11 +178,11 @@ class Sfida(Base):
     __tablename__ = "sfide"
 
     id = Column(Integer, primary_key=True, index=True)
-    autore_id = Column(Integer, ForeignKey("utenti.id", ondelete="CASCADE"), nullable=False)
+    autore_id = Column(Integer, ForeignKey("utenti.id"), nullable=False)
     tema = Column(String(200), nullable=False)
     durata_ore = Column(Integer, nullable=False)
     scadenza = Column(DateTime(timezone=True), nullable=False)
-    vincitore_id = Column(Integer, ForeignKey("utenti.id", ondelete="SET NULL"), nullable=True)
+    vincitore_id = Column(Integer, ForeignKey("utenti.id"), nullable=True)
     visibilita = Column(String(20), default="tutti")  # "tutti" o "selezionati"
     creato_at = Column(DateTime(timezone=True), server_default=func.now())
 
@@ -201,8 +201,8 @@ class InvitoSfida(Base):
     __tablename__ = "inviti_sfida"
 
     id = Column(Integer, primary_key=True)
-    sfida_id = Column(Integer, ForeignKey("sfide.id", ondelete="CASCADE"), nullable=False)
-    invitato_id = Column(Integer, ForeignKey("utenti.id", ondelete="CASCADE"), nullable=False)
+    sfida_id = Column(Integer, ForeignKey("sfide.id"), nullable=False)
+    invitato_id = Column(Integer, ForeignKey("utenti.id"), nullable=False)
     creato_at = Column(DateTime(timezone=True), server_default=func.now())
 
     sfida = relationship("Sfida", back_populates="inviti")
@@ -213,8 +213,8 @@ class PartecipazioneSfida(Base):
     __tablename__ = "partecipazioni_sfida"
 
     id = Column(Integer, primary_key=True)
-    sfida_id = Column(Integer, ForeignKey("sfide.id", ondelete="CASCADE"), nullable=False)
-    utente_id = Column(Integer, ForeignKey("utenti.id", ondelete="CASCADE"), nullable=False)
+    sfida_id = Column(Integer, ForeignKey("sfide.id"), nullable=False)
+    utente_id = Column(Integer, ForeignKey("utenti.id"), nullable=False)
     foto_url = Column(String(500), nullable=False)
     creato_at = Column(DateTime(timezone=True), server_default=func.now())
 
@@ -233,8 +233,8 @@ class VotoSfida(Base):
     __tablename__ = "voti_sfida"
 
     id = Column(Integer, primary_key=True)
-    partecipazione_id = Column(Integer, ForeignKey("partecipazioni_sfida.id", ondelete="CASCADE"), nullable=False)
-    votante_id = Column(Integer, ForeignKey("utenti.id", ondelete="CASCADE"), nullable=False)
+    partecipazione_id = Column(Integer, ForeignKey("partecipazioni_sfida.id"), nullable=False)
+    votante_id = Column(Integer, ForeignKey("utenti.id"), nullable=False)
     voto = Column(Float, nullable=False)
     creato_at = Column(DateTime(timezone=True), server_default=func.now())
 
@@ -246,7 +246,7 @@ class Streak(Base):
     __tablename__ = "streak"
 
     id = Column(Integer, primary_key=True)
-    utente_id = Column(Integer, ForeignKey("utenti.id", ondelete="CASCADE"), unique=True, nullable=False)
+    utente_id = Column(Integer, ForeignKey("utenti.id"), unique=True, nullable=False)
     giorni = Column(Integer, default=0)
     ultimo_post = Column(DateTime(timezone=True), nullable=True)
     record = Column(Integer, default=0)
@@ -258,7 +258,7 @@ class BadgeUtente(Base):
     __tablename__ = "badge_utenti"
 
     id = Column(Integer, primary_key=True)
-    utente_id = Column(Integer, ForeignKey("utenti.id", ondelete="CASCADE"), nullable=False)
+    utente_id = Column(Integer, ForeignKey("utenti.id"), nullable=False)
     tipo = Column(String(50), nullable=False)
     sbloccato_at = Column(DateTime(timezone=True), server_default=func.now())
 
@@ -269,8 +269,8 @@ class Notifica(Base):
     __tablename__ = "notifiche"
 
     id = Column(Integer, primary_key=True, index=True)
-    destinatario_id = Column(Integer, ForeignKey("utenti.id", ondelete="CASCADE"), nullable=False)
-    mittente_id = Column(Integer, ForeignKey("utenti.id", ondelete="CASCADE"), nullable=True)
+    destinatario_id = Column(Integer, ForeignKey("utenti.id"), nullable=False)
+    mittente_id = Column(Integer, ForeignKey("utenti.id"), nullable=True)
     tipo = Column(String(50), nullable=False)
     testo = Column(String(500), nullable=False)
     letta = Column(Boolean, default=False)
@@ -284,7 +284,7 @@ class TokenDispositivoFCM(Base):
     __tablename__ = "token_dispositivi"
 
     id = Column(Integer, primary_key=True)
-    utente_id = Column(Integer, ForeignKey("utenti.id", ondelete="CASCADE"), nullable=False)
+    utente_id = Column(Integer, ForeignKey("utenti.id"), nullable=False)
     token = Column(String(500), nullable=False, unique=True)
     piattaforma = Column(String(20), nullable=False)
     aggiornato_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -294,8 +294,8 @@ class RichiestaFollow(Base):
     __tablename__ = "richieste_follow"
 
     id = Column(Integer, primary_key=True, index=True)
-    richiedente_id = Column(Integer, ForeignKey("utenti.id", ondelete="CASCADE"), nullable=False)
-    destinatario_id = Column(Integer, ForeignKey("utenti.id", ondelete="CASCADE"), nullable=False)
+    richiedente_id = Column(Integer, ForeignKey("utenti.id"), nullable=False)
+    destinatario_id = Column(Integer, ForeignKey("utenti.id"), nullable=False)
     stato = Column(String(20), default="in_attesa")
     creato_at = Column(DateTime(timezone=True), server_default=func.now())
 
@@ -306,10 +306,60 @@ class RefreshToken(Base):
     __tablename__ = "refresh_tokens"
  
     id = Column(Integer, primary_key=True)
-    utente_id = Column(Integer, ForeignKey("utenti.id", ondelete="CASCADE"), nullable=False)
+    utente_id = Column(Integer, ForeignKey("utenti.id"), nullable=False)
     token = Column(String(200), unique=True, nullable=False, index=True)
     scadenza = Column(DateTime(timezone=True), nullable=False)
     revocato = Column(Boolean, default=False)
     creato_at = Column(DateTime(timezone=True), server_default=func.now())
  
     utente = relationship("Utente")
+
+class BloccoUtente(Base):
+    """
+    A ha bloccato B → A non vede B e B non vede A.
+    Toggle: se esiste già, lo sblocca.
+    """
+    __tablename__ = "blocchi_utenti"
+
+    id = Column(Integer, primary_key=True, index=True)
+    bloccante_id = Column(
+        Integer, ForeignKey("utenti.id", ondelete="CASCADE"), nullable=False
+    )
+    bloccato_id = Column(
+        Integer, ForeignKey("utenti.id", ondelete="CASCADE"), nullable=False
+    )
+    creato_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    bloccante = relationship("Utente", foreign_keys=[bloccante_id])
+    bloccato = relationship("Utente", foreign_keys=[bloccato_id])
+
+    # Impedisce di bloccare due volte la stessa persona
+    __table_args__ = (
+        UniqueConstraint("bloccante_id", "bloccato_id", name="uq_blocco_utente"),
+    )
+
+
+class Segnalazione(Base):
+    """
+    Segnalazione di un post o di un utente.
+    post_id e utente_segnalato_id sono opzionali — almeno uno deve essere presente.
+    """
+    __tablename__ = "segnalazioni"
+
+    id = Column(Integer, primary_key=True, index=True)
+    segnalatore_id = Column(
+        Integer, ForeignKey("utenti.id", ondelete="CASCADE"), nullable=False
+    )
+    # Segnalazione di un post specifico (opzionale)
+    post_id = Column(
+        Integer, ForeignKey("post.id", ondelete="CASCADE"), nullable=True
+    )
+    # Segnalazione di un utente direttamente (opzionale)
+    utente_segnalato_id = Column(
+        Integer, ForeignKey("utenti.id", ondelete="CASCADE"), nullable=True
+    )
+    motivo = Column(String(100), nullable=False)
+    risolta = Column(Boolean, default=False)
+    creato_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    segnalatore = relationship("Utente", foreign_keys=[segnalatore_id])

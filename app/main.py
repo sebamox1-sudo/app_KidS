@@ -12,6 +12,7 @@ from app.services.scheduler_service import avvia_scheduler
 from app.routers import esplora
 from contextlib import asynccontextmanager
 from app.routers import ws_commenti
+from app.routers import blocco_segnalazioni
 
 modelli.Base.metadata.create_all(bind=engine)
 
@@ -57,6 +58,7 @@ app.include_router(sfide.router)
 app.include_router(classifica.router)
 app.include_router(esplora.router)
 app.include_router(ws_commenti.router)
+app.include_router(blocco_segnalazioni.router)
 
 @app.get("/")
 def root():
