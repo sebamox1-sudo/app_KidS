@@ -165,7 +165,7 @@ class VotoSondaggio(Base):
     __tablename__ = "voti_sondaggio"
 
     id = Column(Integer, primary_key=True)
-    utente_id = Column(Integer, ForeignKey("utenti.id", ondelete="CSET NULL"), nullable=True)
+    utente_id = Column(Integer, ForeignKey("utenti.id", ondelete="SET NULL"), nullable=True)
     sondaggio_id = Column(Integer, ForeignKey("sondaggi.id", ondelete="CASCADE"), nullable=False)
     opzione_index = Column(Integer, nullable=False)
     anonimo = Column(Boolean, default=False)
