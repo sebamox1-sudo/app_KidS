@@ -16,6 +16,8 @@ from slowapi.util import get_remote_address
 from fastapi import Request
 from app.services.storage_service import carica_e_comprimi_foto
 from app.services.fcm_service import manda_notifica
+# NEW: import broadcast WebSocket commenti
+from app.routers.ws_commenti import broadcast_commento
 
 limiter = Limiter(key_func=get_remote_address)
 
@@ -397,6 +399,21 @@ async def aggiungi_commento(
 
     db.commit()
     db.refresh(commento)
+
+    # NEW: notifica in tempo reale tutti i client connessi a questo post
+    await broadcast_commento(post_id, {
+        "type": "new_comment",
+        "post_id": post_id,
+        "comment": {
+            "id": commento.id,
+            "testo": commento.testo,
+            "autore": me.nome,
+            "foto_profilo": me.foto_profilo,
+            "posizione_classifica": 0,
+            "timestamp": commento.creato_at.isoformat(),
+            "risposte": [],
+        }
+    })
 
     # ✨ Push notification
     if post.autore_id != me.id:

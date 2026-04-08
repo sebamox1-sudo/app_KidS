@@ -11,6 +11,7 @@ from app.database import engine, Base
 from app.services.scheduler_service import avvia_scheduler
 from app.routers import esplora
 from contextlib import asynccontextmanager
+from app.routers import ws_commenti
 
 modelli.Base.metadata.create_all(bind=engine)
 
@@ -55,6 +56,7 @@ app.include_router(sondaggi.router)
 app.include_router(sfide.router)
 app.include_router(classifica.router)
 app.include_router(esplora.router)
+app.include_router(ws_commenti.router)
 
 @app.get("/")
 def root():
