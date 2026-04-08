@@ -187,6 +187,43 @@ def get_feed(skip: int = 0, limit: int = 20,
     ]
 
 
+@router.get("/feed/contatori")
+def get_contatori_feed(
+    post_ids: str,  # "1,2,3,4,5" — IDs dei post visibili
+    db: Session = Depends(get_db),
+    me: Utente = Depends(get_utente_corrente)
+):
+    """Ritorna solo like/commenti/voti per i post specificati.
+    Chiamato ogni 15s — molto più leggero del feed completo."""
+    ids = [int(i) for i in post_ids.split(',') if i.strip().isdigit()]
+    if not ids:
+        return []
+
+    posts = db.query(Post).filter(Post.id.in_(ids)).all()
+    miei_like = {
+        l.post_id for l in db.query(Like).filter(
+            Like.utente_id == me.id,
+            Like.post_id.in_(ids)
+        ).all()
+    }
+    miei_voti = {
+        v.post_id: v.voto for v in db.query(Voto).filter(
+            Voto.utente_id == me.id,
+            Voto.post_id.in_(ids)
+        ).all()
+    }
+
+    return [{
+        "id": p.id,
+        "num_like": p.num_like,
+        "num_commenti": len(p.commenti),
+        "media_voti": p.media_voti,
+        "ho_messo_like": p.id in miei_like,
+        "ho_votato": p.id in miei_voti,
+        "mio_voto": miei_voti.get(p.id),
+    } for p in posts]
+
+
 # ============================================================
 # LIKE / UNLIKE
 # ============================================================
