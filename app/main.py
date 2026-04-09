@@ -13,6 +13,7 @@ from app.routers import esplora
 from contextlib import asynccontextmanager
 from app.routers import ws_commenti
 from app.routers import blocco_segnalazioni
+from app.routers import ws_sfide
 
 modelli.Base.metadata.create_all(bind=engine)
 
@@ -59,6 +60,7 @@ app.include_router(classifica.router)
 app.include_router(esplora.router)
 app.include_router(ws_commenti.router)
 app.include_router(blocco_segnalazioni.router)
+app.include_router(ws_sfide.router)
 
 @app.get("/")
 def root():

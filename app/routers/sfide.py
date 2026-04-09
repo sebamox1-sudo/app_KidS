@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func
 from typing import List, Optional
 from datetime import datetime, timezone, timedelta
@@ -13,10 +13,10 @@ from app.schemas.schemi import SfidaRequest, SfidaResponse
 from app.dependencies import get_utente_corrente
 from app.routers.auth import _utente_response
 from app.services.fcm_service import manda_notifica
-import aiofiles, os, uuid
+from app.services.storage_service import carica_e_comprimi_foto
+from app.routers.ws_sfide import broadcast_voto
 
 router = APIRouter(prefix="/sfide", tags=["Sfide"])
-UPLOAD_DIR = os.getenv("UPLOAD_DIR", "uploads")
 
 class RichiestaVoto(BaseModel):
     voto: float
@@ -194,18 +194,14 @@ async def partecipa_sfida(
     if gia:
         raise HTTPException(status_code=400, detail="Hai già partecipato")
 
-    os.makedirs(f"{UPLOAD_DIR}/sfide", exist_ok=True)
-    ext = foto.filename.split(".")[-1]
-    nome = f"{uuid.uuid4()}.{ext}"
-    percorso = f"{UPLOAD_DIR}/sfide/{nome}"
-    async with aiofiles.open(percorso, "wb") as f:
-        await f.write(await foto.read())
-
+    # Carica foto su Supabase — persistente anche dopo restart Railway
+    url_foto = await carica_e_comprimi_foto(foto, cartella="sfide")
     partecipazione = PartecipazioneSfida(
         sfida_id=sfida_id,
         utente_id=me.id,
-        foto_url=f"/uploads/sfide/{nome}",
+        foto_url=url_foto,
     )
+
     db.add(partecipazione)
 
     # Calcoliamo se è una partecipazione rapida (entro 10 min dal lancio)
@@ -255,13 +251,23 @@ def get_partecipazioni(
     db: Session = Depends(get_db),
     me: Utente = Depends(get_utente_corrente)
 ):
-    sfida = db.query(Sfida).filter(Sfida.id == sfida_id).first()
+    sfida = db.query(Sfida).options(
+    joinedload(Sfida.partecipazioni)
+    .joinedload(PartecipazioneSfida.utente),
+    joinedload(Sfida.partecipazioni)
+    .joinedload(PartecipazioneSfida.voti),
+).filter(Sfida.id == sfida_id).first()
     if not sfida:
         raise HTTPException(status_code=404, detail="Sfida non trovata")
+    
     if not _utente_puo_vedere(sfida, me, db):
         raise HTTPException(status_code=403, detail="Non hai accesso a questa sfida")
 
-    ho_partecipato = any(p.utente_id == me.id for p in sfida.partecipazioni)
+    # Check partecipazione con query diretta — non carica tutto in memoria
+    ho_partecipato = db.query(PartecipazioneSfida).filter(
+        PartecipazioneSfida.sfida_id == sfida_id,
+        PartecipazioneSfida.utente_id == me.id,
+    ).first() is not None
     if not ho_partecipato and sfida.autore_id != me.id:
         raise HTTPException(status_code=403, detail="Devi partecipare per vedere le foto")
 
@@ -315,14 +321,25 @@ def vota_partecipazione(
         autore_foto.ha_preso_dieci = True
 
     # 4. CALCOLO MEDIA AGGIORNATA
-    db.flush() # Allinea il database senza chiudere la transazione [cite: 2026-03-17]
-    if p.media_voti > autore_foto.miglior_media:
-        autore_foto.miglior_media = p.media_voti # Badge "Stella"
-    
-    # 5. SALVATAGGIO DEFINITIVO
+    db.flush()
+    tutti_voti = db.query(VotoSfida).filter(
+        VotoSfida.partecipazione_id == partecipazione_id
+    ).all()
+    nuova_media = sum(v.voto for v in tutti_voti) / len(tutti_voti)
+    p.media_voti = nuova_media
+    if nuova_media > autore_foto.miglior_media:
+        autore_foto.miglior_media = nuova_media
     db.commit()
-    
-    return {"media_voti": p.media_voti}
+
+    # Notifica in tempo reale tutti i client connessi alla sfida
+    import asyncio
+    asyncio.create_task(broadcast_voto(
+        sfida_id=p.sfida_id,
+        partecipazione_id=partecipazione_id,
+        nuova_media=nuova_media,
+    ))
+
+    return {"media_voti": nuova_media}
 
 
 # ============================================================
@@ -330,15 +347,28 @@ def vota_partecipazione(
 # ============================================================
 
 def _utente_puo_vedere(sfida: Sfida, utente: Utente, db: Session) -> bool:
+    """
+    Regole di visibilità:
+    - L'autore vede sempre la sua sfida
+    - Sfide "selezionati": solo chi è invitato
+    - Sfide "tutti": solo chi segue l'autore (o l'autore stesso)
+    """
     if sfida.autore_id == utente.id:
         return True
-    if sfida.visibilita == "tutti":
-        return True
-    invito = db.query(InvitoSfida).filter(
-        InvitoSfida.sfida_id == sfida.id,
-        InvitoSfida.invitato_id == utente.id,
-    ).first()
-    return invito is not None
+
+    if sfida.visibilita == "selezionati":
+        invito = db.query(InvitoSfida).filter(
+            InvitoSfida.sfida_id == sfida.id,
+            InvitoSfida.invitato_id == utente.id,
+        ).first()
+        return invito is not None
+
+    # Sfida pubblica — visibile solo a chi segue l'autore
+    segue_autore = db.query(Follow).filter(
+        Follow.follower_id == utente.id,
+        Follow.seguito_id == sfida.autore_id,
+    ).first() is not None
+    return segue_autore
 
 
 def _sfida_response(s: Sfida, utente_id: int, db: Session) -> dict:
@@ -376,7 +406,7 @@ def _sfida_response(s: Sfida, utente_id: int, db: Session) -> dict:
         "visibilita": s.visibilita,
         "vincitore": _utente_response(s.vincitore, db) if s.vincitore else None,
         "num_partecipanti": len(s.partecipazioni),
-        "ho_partecipato": any(p.utente_id == utente_id for p.utente_id in [part.utente_id for part in s.partecipazioni]),
+        "ho_partecipato": any(p.utente_id == utente_id for p in s.partecipazioni),
         "sono_invitato": sono_invitato,
         "invitati": invitati,
         "creato_at": s.creato_at,
