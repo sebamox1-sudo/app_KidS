@@ -143,12 +143,63 @@ def get_follower_di_utente(
     db: Session = Depends(get_db),
     me: Utente = Depends(get_utente_corrente)
 ):
-    """Lista follower di un utente pubblico."""
     utente = _trova_utente(username, db)
-    if utente.is_privato and utente.id != me.id:
+    
+    # Visibile se: profilo pubblico, sono io, oppure lo seguo già
+    lo_seguo = db.query(Follow).filter(
+        Follow.follower_id == me.id,
+        Follow.seguito_id == utente.id
+    ).first() is not None
+    
+    if utente.is_privato and utente.id != me.id and not lo_seguo:
         raise HTTPException(status_code=403, detail="Profilo privato")
+    
     follower_ids = [f.follower_id for f in utente.follower_rel]
     utenti = db.query(Utente).filter(Utente.id.in_(follower_ids)).all()
+    return [_utente_response(u, db) for u in utenti]
+
+
+@router.get("/{username}/seguiti")
+def get_seguiti_di_utente_pub(
+    username: str,
+    db: Session = Depends(get_db),
+    me: Utente = Depends(get_utente_corrente)
+):
+    utente = _trova_utente(username, db)
+    
+    lo_seguo = db.query(Follow).filter(
+        Follow.follower_id == me.id,
+        Follow.seguito_id == utente.id
+    ).first() is not None
+    
+    if utente.is_privato and utente.id != me.id and not lo_seguo:
+        raise HTTPException(status_code=403, detail="Profilo privato")
+    
+    seguiti_ids = [f.seguito_id for f in utente.seguiti_rel]
+    utenti = db.query(Utente).filter(Utente.id.in_(seguiti_ids)).all()
+    return [_utente_response(u, db) for u in utenti]
+
+
+@router.get("/{username}/amici")
+def get_amici_di_utente(
+    username: str,
+    db: Session = Depends(get_db),
+    me: Utente = Depends(get_utente_corrente)
+):
+    utente = _trova_utente(username, db)
+    
+    lo_seguo = db.query(Follow).filter(
+        Follow.follower_id == me.id,
+        Follow.seguito_id == utente.id
+    ).first() is not None
+    
+    if utente.is_privato and utente.id != me.id and not lo_seguo:
+        raise HTTPException(status_code=403, detail="Profilo privato")
+    
+    seguiti_ids = {f.seguito_id for f in utente.seguiti_rel}
+    follower_ids = {f.follower_id for f in utente.follower_rel}
+    amici_ids = seguiti_ids & follower_ids
+    utenti = db.query(Utente).filter(Utente.id.in_(amici_ids)).all()
     return [_utente_response(u, db) for u in utenti]
 
 
