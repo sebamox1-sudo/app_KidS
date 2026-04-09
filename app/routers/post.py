@@ -16,6 +16,7 @@ from slowapi.util import get_remote_address
 from fastapi import Request
 from app.services.storage_service import carica_e_comprimi_foto
 from app.services.fcm_service import manda_notifica
+from app.routers.blocco_segnalazioni import get_ids_bloccati
 
 limiter = Limiter(key_func=get_remote_address)
 
@@ -365,14 +366,13 @@ async def vota_post(post_id: int, dati: VotoPostRequest,
 def get_commenti(post_id: int, db: Session = Depends(get_db),
                  me: Utente = Depends(get_utente_corrente)):
     # Escludi commenti di utenti bloccati o che mi hanno bloccato
-    from app.routers.blocco_segnalazioni import get_ids_bloccati
     ids_bloccati = get_ids_bloccati(me, db)
 
     commenti = db.query(Commento).filter(
         Commento.post_id == post_id,
         Commento.risposta_a_id == None,
         Commento.autore_id.notin_(ids_bloccati),
-    ).order_by(Commento.creato_at).all()
+    ).order_by(Commento.creato_at.desc()).all()
     return [_commento_response(c, db) for c in commenti]
 
 
