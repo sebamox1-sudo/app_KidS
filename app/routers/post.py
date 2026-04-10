@@ -422,6 +422,18 @@ async def aggiungi_commento(
     return _commento_response(commento, db)
 
 
+@router.post("/streak/azzera")
+def azzera_streak(
+    db: Session = Depends(get_db),
+    me: Utente = Depends(get_utente_corrente)
+):
+    """Azzera la streak nel DB quando il client rileva la scadenza."""
+    if me.streak:
+        me.streak.giorni = 0
+        db.commit()
+    return {"ok": True}
+
+
 # ============================================================
 # ELIMINA POST — ora elimina anche i file dal filesystem
 # ============================================================
