@@ -591,6 +591,8 @@ def _aggiorna_streak(utente: Utente, db: Session):
         ultimo = ultimo.replace(tzinfo=timezone.utc)
 
     diff_ore = (ora - ultimo).total_seconds() / 3600
+    print(f"🔥 DIFF ORE: {diff_ore}")
+    print(f"🔥 STREAK PRIMA: {streak.giorni}")
 
     if diff_ore < 24:
         # Postato di nuovo entro 24h — timer si azzera, streak invariata
@@ -605,3 +607,4 @@ def _aggiorna_streak(utente: Utente, db: Session):
         # Più di 48h — reset
         streak.giorni = 1
         streak.ultimo_post = ora
+    print(f"🔥 STREAK DOPO: {streak.giorni}")
