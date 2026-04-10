@@ -183,6 +183,7 @@ def _utente_response(u: Utente, db: Session) -> UtenteResponse:
         num_seguiti=num_seguiti,
         num_post=num_post,
         streak_giorni=u.streak.giorni if u.streak else 0,
+        streak_ultimo_post=u.streak.ultimo_post if u.streak else None,
         onboarding_completato=u.onboarding_completato,
         creato_at=u.creato_at,
         num_amici=num_amici,
