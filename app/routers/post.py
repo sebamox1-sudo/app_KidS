@@ -567,32 +567,41 @@ def _commento_response(c: Commento, db: Session) -> CommentoResponse:
 
 
 def _aggiorna_streak(utente: Utente, db: Session):
-    """Aggiorna streak basandosi sulla data locale (confronto per giorno calendario)."""
+    """
+    Logica Snapchat esatta — finestra di 24h precise:
+    - Nessun post precedente → streak = 1
+    - Ultimo post < 24h fa → stesso giorno, nessun cambio (timer resta)
+    - Ultimo post tra 24h e 48h fa → +1 (ha postato nel giorno successivo)
+    - Ultimo post > 48h fa → reset a 1
+    """
     streak = utente.streak
-    if not streak:
-        streak = Streak(utente_id=utente.id, giorni=1)
-        streak.ultimo_post = datetime.now(timezone.utc)
-        db.add(streak)
-        return
-
     ora = datetime.now(timezone.utc)
 
-    if streak.ultimo_post:
-        ultimo = streak.ultimo_post.replace(tzinfo=timezone.utc) if streak.ultimo_post.tzinfo is None else streak.ultimo_post
-        # Confronta per data calendario (non ore)
-        oggi = ora.date()
-        ultimo_giorno = ultimo.date()
-        diff_giorni = (oggi - ultimo_giorno).days
+    if not streak:
+        db.add(Streak(utente_id=utente.id, giorni=1, ultimo_post=ora))
+        return
 
-        if diff_giorni == 0:
-            pass  # Già postato oggi
-        elif diff_giorni == 1:
-            streak.giorni += 1
-            if streak.giorni > streak.record:
-                streak.record = streak.giorni
-        else:
-            streak.giorni = 1  # Reset — più di 1 giorno senza post
-    else:
+    if not streak.ultimo_post:
         streak.giorni = 1
+        streak.ultimo_post = ora
+        return
 
-    streak.ultimo_post = ora
+    ultimo = streak.ultimo_post
+    if ultimo.tzinfo is None:
+        ultimo = ultimo.replace(tzinfo=timezone.utc)
+
+    diff_ore = (ora - ultimo).total_seconds() / 3600
+
+    if diff_ore < 24:
+        # Postato di nuovo entro 24h — timer si azzera, streak invariata
+        streak.ultimo_post = ora
+    elif diff_ore < 48:
+        # Postato tra 24h e 48h — streak +1
+        streak.giorni += 1
+        if streak.giorni > streak.record:
+            streak.record = streak.giorni
+        streak.ultimo_post = ora
+    else:
+        # Più di 48h — reset
+        streak.giorni = 1
+        streak.ultimo_post = ora
