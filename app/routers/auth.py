@@ -163,7 +163,8 @@ def _utente_response(u: Utente, db: Session) -> UtenteResponse:
     ).scalar() or 0
 
     num_post = db.query(func.count(Post.id)).filter(
-        Post.autore_id == u.id
+    Post.autore_id == u.id,
+    Post.foto_principale.isnot(None),
     ).scalar() or 0
 
      # Amici = follow reciproco
