@@ -387,6 +387,18 @@ async def aggiungi_commento(
     post = db.query(Post).filter(Post.id == post_id).first()
     if not post:
         raise HTTPException(status_code=404, detail="Post non trovato")
+    
+    # ── ENFORCEMENT 1-LEVEL: validazione PRIMA di qualsiasi write ──
+    parent = None
+    if dati.risposta_a_id:
+        parent = db.query(Commento).filter(
+            Commento.id == dati.risposta_a_id,
+            Commento.post_id == post_id,  # sicurezza: il parent deve essere dello stesso post
+        ).first()
+        if not parent:
+            raise HTTPException(404, "Commento padre non trovato")
+        if parent.risposta_a_id is not None:
+            raise HTTPException(400, "Puoi rispondere solo a commenti di primo livello")
 
     commento = Commento(
         autore_id=me.id,
@@ -418,9 +430,12 @@ async def aggiungi_commento(
     tipo="commento",
     extra={"post_id": post.id, "mittente_username": me.username,
            "mittente_nome": me.nome, "mittente_id": me.id})
+        
     
+     # Notifica al parent comment author (se è una risposta)
     if dati.risposta_a_id:
         parent = db.query(Commento).filter(Commento.id == dati.risposta_a_id).first()
+        
         if parent and parent.autore_id != me.id and parent.autore_id != post.autore_id:
             db.add(Notifica(
                 destinatario_id=parent.autore_id,
