@@ -171,6 +171,9 @@ def _utente_response(u: Utente, db: Session) -> UtenteResponse:
     follower_ids = {f.follower_id for f in u.follower_rel}
     num_amici = len(seguiti_ids & follower_ids)
 
+    # Lista dei tipi di badge già sbloccati dall'utente
+    badge_sbloccati = [b.tipo for b in u.badge]
+
     return UtenteResponse(
         id=u.id,
         nome=u.nome,
@@ -187,4 +190,5 @@ def _utente_response(u: Utente, db: Session) -> UtenteResponse:
         onboarding_completato=u.onboarding_completato,
         creato_at=u.creato_at,
         num_amici=num_amici,
+        badge_sbloccati=badge_sbloccati,
     )

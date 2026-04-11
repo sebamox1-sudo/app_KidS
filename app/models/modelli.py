@@ -264,6 +264,11 @@ class BadgeUtente(Base):
 
     utente = relationship("Utente", back_populates="badge")
 
+    # Impedisce badge duplicati anche in caso di race condition
+    __table_args__ = (
+        UniqueConstraint("utente_id", "tipo", name="uq_badge_utente_tipo"),
+    )
+
 
 class Notifica(Base):
     __tablename__ = "notifiche"
