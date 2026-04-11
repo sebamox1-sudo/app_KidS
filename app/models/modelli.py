@@ -1,5 +1,5 @@
 from sqlalchemy import Column, Integer, String, Float, Boolean, DateTime, ForeignKey, Text, UniqueConstraint
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, backref
 from sqlalchemy.sql import func
 from app.database import Base
 import enum
@@ -145,7 +145,12 @@ class Commento(Base):
 
     autore = relationship("Utente", back_populates="commenti")
     post = relationship("Post", back_populates="commenti")
-    risposte = relationship("Commento", backref="genitore", remote_side=[id])
+    risposte = relationship(
+    "Commento",
+    backref=backref("genitore", remote_side=[id]),
+    lazy="joined",
+    order_by="Commento.creato_at",
+)
 
 
 class Sondaggio(Base):

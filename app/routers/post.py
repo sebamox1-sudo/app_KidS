@@ -17,6 +17,7 @@ from fastapi import Request
 from app.services.storage_service import carica_e_comprimi_foto
 from app.services.fcm_service import manda_notifica
 from app.routers.blocco_segnalazioni import get_ids_bloccati
+from app.routers.ws_commenti import broadcast_commento
 
 limiter = Limiter(key_func=get_remote_address)
 
@@ -417,6 +418,22 @@ async def aggiungi_commento(
     tipo="commento",
     extra={"post_id": post.id, "mittente_username": me.username,
            "mittente_nome": me.nome, "mittente_id": me.id})
+
+    # ── BROADCAST REAL-TIME ──
+    await broadcast_commento(post_id, {
+        "type": "new_comment",
+        "comment": {
+            "id": commento.id,
+            "testo": commento.testo,
+            "autore": {
+                "nome": me.nome,
+                "foto_profilo": me.foto_profilo,
+                "posizione_classifica": getattr(me, "posizione_classifica", 0),
+            },
+            "risposta_a_id": commento.risposta_a_id,
+            "creato_at": commento.creato_at.isoformat(),
+        },
+    })
     
     await verifica_badge(me, db, nuovo_commento=True)
     return _commento_response(commento, db)
