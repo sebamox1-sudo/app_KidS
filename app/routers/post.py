@@ -61,8 +61,11 @@ async def pubblica_post_testuale(
     db.commit()
     db.refresh(post)
     await verifica_badge(me, db)
-    return _post_response(post, me.id, db)
-
+    risposta = _post_response(post, me.id, db)
+    return {
+        **risposta.dict(),
+        "streak_giorni": me.streak.giorni if me.streak else 0,
+    }
 
 # ============================================================
 # PUBBLICA POST CON FOTO
@@ -629,11 +632,14 @@ def _commento_response(c: Commento, db: Session) -> CommentoResponse:
 
 def _aggiorna_streak(utente: Utente, db: Session):
     """
-    Logica Snapchat esatta — finestra di 24h precise:
-    - Nessun post precedente → streak = 1
-    - Ultimo post < 24h fa → stesso giorno, nessun cambio (timer resta)
-    - Ultimo post tra 24h e 48h fa → +1 (ha postato nel giorno successivo)
-    - Ultimo post > 48h fa → reset a 1
+    Logica streak corretta:
+    - Primo post → streak = 1
+    - Post entro 24h dall'ultimo conteggiato → ignora (già contato oggi)
+    - Post tra 24h e 48h → streak +1 (nuovo giorno valido)
+    - Post dopo 48h → streak reset a 1 (ha saltato un giorno)
+    
+    REGOLA CHIAVE: ultimo_post si aggiorna SOLO quando la streak
+    cambia (increment o reset), MAI su post ripetuti nella stessa finestra.
     """
     streak = utente.streak
     ora = datetime.now(timezone.utc)
@@ -652,20 +658,18 @@ def _aggiorna_streak(utente: Utente, db: Session):
         ultimo = ultimo.replace(tzinfo=timezone.utc)
 
     diff_ore = (ora - ultimo).total_seconds() / 3600
-    print(f"🔥 DIFF ORE: {diff_ore}")
-    print(f"🔥 STREAK PRIMA: {streak.giorni}")
 
     if diff_ore < 24:
-        # Postato di nuovo entro 24h — timer si azzera, streak invariata
-        streak.ultimo_post = ora
+        # Stesso periodo — NON spostare il timer, NON incrementare
+        # L'utente ha già postato in questa finestra
+        pass
     elif diff_ore < 48:
-        # Postato tra 24h e 48h — streak +1
+        # Finestra valida — nuovo giorno, streak +1
         streak.giorni += 1
         if streak.giorni > streak.record:
             streak.record = streak.giorni
         streak.ultimo_post = ora
     else:
-        # Più di 48h — reset
+        # Ha saltato troppo — reset
         streak.giorni = 1
         streak.ultimo_post = ora
-    print(f"🔥 STREAK DOPO: {streak.giorni}")
