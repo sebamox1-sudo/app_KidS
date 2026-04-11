@@ -149,7 +149,7 @@ def _calcola_statistiche(utente: Utente, db: Session) -> dict:
 
     # ── Sfide consecutive — conta le sfide nelle ultime 72h consecutive ──
     # Usa il contatore pre-calcolato sull'utente (aggiornato da sfide.py)
-    sfide_consecutive = utente.sfide_partecipate  # TODO: implementare logica consecutiva vera
+    sfide_consecutive = utente.sfide_consecutive or 0
 
     return {
         "post": num_post,

@@ -211,6 +211,8 @@ async def partecipa_sfida(
     
     me.sfide_partecipate += 1
 
+    _aggiorna_sfide_consecutive(me, db)
+
 
     if sfida.autore_id != me.id:
         db.add(Notifica(
@@ -412,3 +414,36 @@ def _sfida_response(s: Sfida, utente_id: int, db: Session) -> dict:
         "creato_at": s.creato_at,
         "partecipazioni": partecipazioni_list # <-- Aggiunto!
     }
+
+def _aggiorna_sfide_consecutive(utente: Utente, db: Session):
+    """
+    Logica identica alla streak post — finestra 24h:
+    - Prima sfida → consecutive = 1
+    - Sfida entro 24h dall'ultima → aggiorna timer, consecutive invariate
+    - Sfida tra 24h e 48h → consecutive + 1
+    - Sfida dopo 48h → reset a 1
+    """
+    ora = datetime.now(timezone.utc)
+
+    if not utente.ultima_sfida_at:
+        utente.sfide_consecutive = 1
+        utente.ultima_sfida_at = ora
+        return
+
+    ultima = utente.ultima_sfida_at
+    if ultima.tzinfo is None:
+        ultima = ultima.replace(tzinfo=timezone.utc)
+
+    diff_ore = (ora - ultima).total_seconds() / 3600
+
+    if diff_ore < 24:
+        # Già partecipato oggi — aggiorna solo il timer
+        utente.ultima_sfida_at = ora
+    elif diff_ore < 48:
+        # Giorno successivo — incrementa consecutiva
+        utente.sfide_consecutive += 1
+        utente.ultima_sfida_at = ora
+    else:
+        # Saltato un giorno — reset
+        utente.sfide_consecutive = 1
+        utente.ultima_sfida_at = ora

@@ -31,6 +31,8 @@ class Utente(Base):
     miglior_media = Column(Float, default=0.0)
     ha_preso_dieci = Column(Boolean, default=False)
     sfide_rapide = Column(Integer, default=0) # ✨ Per il badge "Flash"
+    sfide_consecutive = Column(Integer, default=0)      
+    ultima_sfida_at = Column(DateTime(timezone=True), nullable=True)
     # -----------------------------------------------
 
     creato_at = Column(DateTime(timezone=True), server_default=func.now())
