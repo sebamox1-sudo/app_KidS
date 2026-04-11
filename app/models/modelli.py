@@ -235,17 +235,24 @@ class PartecipazioneSfida(Base):
     sfida_id = Column(Integer, ForeignKey("sfide.id", ondelete = "CASCADE"), nullable=False)
     utente_id = Column(Integer, ForeignKey("utenti.id", ondelete = "CASCADE"), nullable=False)
     foto_url = Column(String(500), nullable=False)
+    somma_voti = Column(Float, default=0.0)
+    num_voti = Column(Integer, default=0)
     creato_at = Column(DateTime(timezone=True), server_default=func.now())
 
     sfida = relationship("Sfida", back_populates="partecipazioni")
     utente = relationship("Utente")
     voti = relationship("VotoSfida", back_populates="partecipazione", cascade="all, delete")
 
+
     @property
     def media_voti(self):
-        if not self.voti:
+        if self.num_voti == 0:
             return 0.0
-        return sum(v.voto for v in self.voti) / len(self.voti)
+        return self.somma_voti / self.num_voti
+    
+    __table_args__ = (
+        UniqueConstraint("sfida_id", "utente_id", name="uq_partecipazione_sfida_utente"),
+    )
 
 
 class VotoSfida(Base):
@@ -260,6 +267,9 @@ class VotoSfida(Base):
     partecipazione = relationship("PartecipazioneSfida", back_populates="voti")
     votante = relationship("Utente")
 
+    __table_args__ = (
+        UniqueConstraint("partecipazione_id", "votante_id", name="uq_voto_sfida_utente"),
+    )
 
 class Streak(Base):
     __tablename__ = "streak"

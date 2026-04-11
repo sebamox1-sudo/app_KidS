@@ -15,6 +15,7 @@ from app.routers.auth import _utente_response
 from app.services.fcm_service import manda_notifica
 from app.services.storage_service import carica_e_comprimi_foto
 from app.routers.ws_sfide import broadcast_voto
+import asyncio
 
 router = APIRouter(prefix="/sfide", tags=["Sfide"])
 
@@ -286,17 +287,38 @@ def get_partecipazioni(
 # VOTA
 # ============================================================
 @router.post("/partecipazioni/{partecipazione_id}/vota")
-def vota_partecipazione(
+async def vota_partecipazione(
     partecipazione_id: int,
     dati: RichiestaVoto, # <-- PRIMA ERA: voto: float. ORA USIAMO IL MODELLO!
     db: Session = Depends(get_db),
     me: Utente = Depends(get_utente_corrente)
 ):
+    
+    if not 0 <= dati.voto <= 10:
+        raise HTTPException(400, "Il voto deve essere tra 0 e 10")
+    
     p = db.query(PartecipazioneSfida).filter(
         PartecipazioneSfida.id == partecipazione_id).first()
     if not p:
         raise HTTPException(status_code=404, detail="Non trovata")
 
+    if p.utente_id == me.id:
+        raise HTTPException(status_code=403, detail="Non puoi votare la tua foto")
+    
+    # Verifica che il votante abbia partecipato alla sfida
+    ha_partecipato = db.query(PartecipazioneSfida).filter(
+        PartecipazioneSfida.sfida_id == p.sfida_id,
+        PartecipazioneSfida.utente_id == me.id,
+    ).first()
+    if not ha_partecipato:
+        raise HTTPException(status_code=403, detail="Devi partecipare per votare")
+    
+    # Controlla sfida scaduta
+    sfida = p.sfida
+    if sfida.is_scaduta:
+        raise HTTPException(status_code=400, detail="Sfida scaduta, non puoi più votare")
+
+    
     esiste = db.query(VotoSfida).filter(
         VotoSfida.partecipazione_id == partecipazione_id,
         VotoSfida.votante_id == me.id
@@ -312,6 +334,12 @@ def vota_partecipazione(
         voto=dati.voto
     )
     db.add(nuovo_voto)
+
+    # Contatori denormalizzati
+    p.somma_voti = (p.somma_voti or 0) + dati.voto
+    p.num_voti = (p.num_voti or 0) + 1
+    nuova_media = p.media_voti
+
     # ✨ FIX PER I BADGE DEI VOTI!
     me.voti_dati += 1
     if dati.voto < 5.0:
@@ -321,25 +349,17 @@ def vota_partecipazione(
     autore_foto = p.utente
     if dati.voto == 10.0:
         autore_foto.ha_preso_dieci = True
-
-    # 4. CALCOLO MEDIA AGGIORNATA
-    db.flush()
-    tutti_voti = db.query(VotoSfida).filter(
-        VotoSfida.partecipazione_id == partecipazione_id
-    ).all()
-    nuova_media = sum(v.voto for v in tutti_voti) / len(tutti_voti)
-    p.media_voti = nuova_media
     if nuova_media > autore_foto.miglior_media:
         autore_foto.miglior_media = nuova_media
-    db.commit()
 
-    # Notifica in tempo reale tutti i client connessi alla sfida
-    import asyncio
+    db.commit()
+    # Broadcast real-time
     asyncio.create_task(broadcast_voto(
         sfida_id=p.sfida_id,
         partecipazione_id=partecipazione_id,
         nuova_media=nuova_media,
     ))
+
 
     return {"media_voti": nuova_media}
 
@@ -447,3 +467,21 @@ def _aggiorna_sfide_consecutive(utente: Utente, db: Session):
         # Saltato un giorno — reset
         utente.sfide_consecutive = 1
         utente.ultima_sfida_at = ora
+
+# Aggiungere in fondo a sfide.py
+def calcola_vincitore_sfide_scadute(db: Session):
+    """Chiamato dallo scheduler ogni 5 minuti."""
+    ora = datetime.now(timezone.utc)
+    sfide_scadute = db.query(Sfida).filter(
+        Sfida.scadenza <= ora,
+        Sfida.vincitore_id == None,
+    ).all()
+
+    for sfida in sfide_scadute:
+        if not sfida.partecipazioni:
+            continue
+        migliore = max(sfida.partecipazioni, key=lambda p: p.media_voti)
+        if migliore.media_voti > 0:
+            sfida.vincitore_id = migliore.utente_id
+
+    db.commit()
