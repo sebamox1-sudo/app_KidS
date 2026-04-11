@@ -102,6 +102,31 @@ def reminder_post_giornaliero():
     finally:
         db.close()
 
+# ============================================================
+# JOB 3 — Azzera streak scadute (ogni ora)
+# ============================================================
+def azzera_streak_scadute():
+    db = _get_db()
+    try:
+        limite = datetime.now(timezone.utc) - timedelta(hours=48)
+
+        scadute = db.query(Streak).filter(
+            Streak.giorni > 0,
+            Streak.ultimo_post <= limite,
+        ).all()
+
+        for streak in scadute:
+            streak.giorni = 0
+
+        if scadute:
+            db.commit()
+            print(f"🧹 Azzerate {len(scadute)} streak scadute.")
+    except Exception as e:
+        print(f"Errore azzera_streak: {e}")
+    finally:
+        db.close()
+
+
 
 # ============================================================
 # AVVIO SCHEDULER
@@ -120,6 +145,14 @@ def avvia_scheduler():
         reminder_post_giornaliero,
         CronTrigger(hour=12, minute=0),
         id="reminder_giornaliero",
+        replace_existing=True,
+    )
+
+    # Pulizia streak scadute ogni ora (al minuto 30, sfalsato dal check streak)
+    scheduler.add_job(
+        azzera_streak_scadute,
+        CronTrigger(minute=30),
+        id="azzera_streak",
         replace_existing=True,
     )
 
