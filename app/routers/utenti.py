@@ -376,6 +376,13 @@ def segui(username: str, db: Session = Depends(get_db),
         destinatario_id=target.id,
         titolo="Nuovo follower! 🌟",
         corpo=f"{me.nome} ha iniziato a seguirti",
+        tipo="follow",
+        extra={
+            "mittente_username": me.username,
+            "mittente_nome": me.nome,
+            "mittente_id": me.id,
+            "mittente_foto": me.foto_profilo or "",
+        },
     )
     return {"messaggio": f"Ora segui {target.username}", "stato": "seguito"}
 
@@ -450,6 +457,13 @@ def accetta_richiesta(
         destinatario_id=richiesta.richiedente_id,
         titolo="Richiesta accettata! ✅",
         corpo=f"{me.nome} ha accettato la tua richiesta di follow",
+        tipo="follow_accettato",
+        extra={
+            "mittente_username": me.username,
+            "mittente_nome": me.nome,
+            "mittente_id": me.id,
+            "mittente_foto": me.foto_profilo or "",
+        },
     )
     # ✨ Restituiamo successo: True per Flutter
     return {"successo": True, "messaggio": "Richiesta accettata"}

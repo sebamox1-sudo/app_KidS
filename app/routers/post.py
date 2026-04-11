@@ -354,7 +354,7 @@ async def vota_post(post_id: int, dati: VotoPostRequest,
     destinatario_id=post.autore_id,
     titolo="Nuovo voto! ⭐",
     corpo=f"Il tuo post ha ricevuto un voto di {dati.voto:.1f}",
-    tipo="commento",  # ← porta al pannello commenti del post
+    tipo="voto", 
     extra={
         "post_id": post.id,
         # Non mettiamo mittente — il voto è anonimo
