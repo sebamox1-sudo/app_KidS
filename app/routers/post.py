@@ -335,16 +335,11 @@ async def vota_post(post_id: int, dati: VotoPostRequest,
         me.voti_negativi += 1 # Per il badge "Occhio Fino"
 
     if post.autore_id != me.id:
-        testo = (
-            f"Un utente anonimo ha votato il tuo post con {dati.voto:.1f}"
-            if dati.anonimo
-            else f"{me.nome} ha votato il tuo post con {dati.voto:.1f}"
-        )
         db.add(Notifica(
             destinatario_id=post.autore_id,
             mittente_id=None,
             tipo="voto",
-            testo=testo,
+            testo=f"Un utente anonimo ha votato il tuo post con {dati.voto:.1f}",
         ))
 
     db.commit()
