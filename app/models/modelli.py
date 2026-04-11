@@ -192,6 +192,10 @@ class VotoSondaggio(Base):
 
     sondaggio = relationship("Sondaggio", back_populates="voti")
 
+    __table_args__ = (
+        UniqueConstraint("utente_id", "sondaggio_id", name="uq_voto_sondaggio_utente"),
+    )
+
 
 class Sfida(Base):
     __tablename__ = "sfide"

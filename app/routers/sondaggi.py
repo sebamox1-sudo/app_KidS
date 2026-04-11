@@ -102,6 +102,12 @@ def vota_sondaggio(
         Sondaggio.id == sondaggio_id).first()
     if not sondaggio:
         raise HTTPException(status_code=404, detail="Sondaggio non trovato")
+    
+    # Verifica che l'utente segua l'autore del sondaggio (o sia l'autore)
+    if sondaggio.autore_id != me.id:
+        seguiti_ids = {f.seguito_id for f in me.seguiti_rel}
+        if sondaggio.autore_id not in seguiti_ids:
+            raise HTTPException(status_code=403, detail="Non puoi votare questo sondaggio")
 
     # Controlla scadenza
     ora = datetime.now(timezone.utc)
@@ -119,7 +125,7 @@ def vota_sondaggio(
         raise HTTPException(status_code=400, detail="Hai già votato")
 
     opzioni = json.loads(sondaggio.opzioni)
-    if dati.opzione_index >= len(opzioni):
+    if dati.opzione_index < 0 or dati.opzione_index >= len(opzioni):
         raise HTTPException(status_code=400, detail="Opzione non valida")
 
     voto = VotoSondaggio(
@@ -163,34 +169,31 @@ def get_voti_sondaggio(
         return {"successo": False, "errore": "Non sei l'autore di questo sondaggio"}
         
     # 3. Recupera i voti
-    voti_db = db.query(VotoSondaggio).filter(VotoSondaggio.sondaggio_id == sondaggio_id).all()
-    
+    voti_db = db.query(VotoSondaggio).filter(
+        VotoSondaggio.sondaggio_id == sondaggio_id
+    ).all()
+
     risultato = []
     for v in voti_db:
-        utente = None # Assumendo la relationship
-        if v.utente_id:
-            utente = db.query(Utente).filter(Utente.id == v.utente_id).first()
-        # Se il voto è anonimo o l'utente è stato cancellato, nascondiamo tutto
-        if v.anonimo or not utente:
+        if v.anonimo:
             risultato.append({
                 "nome": "Voto Anonimo",
                 "avatar": None,
-                "is_anonimo": True, # Lasciamo is_anonimo qui per Flutter
-                "opzione_index": v.opzione_index
+                "is_anonimo": True,
+                "opzione_index": v.opzione_index,
             })
         else:
-            dati_utente_completi = _utente_response(utente, db)
-            # Mostriamo l'identità
+            utente = db.query(Utente).filter(Utente.id == v.utente_id).first()
+            if not utente:
+                continue
             risultato.append({
                 "nome": utente.nome,
                 "username": utente.username,
                 "avatar": utente.foto_profilo,
-                "is_anonimo": False, # Lasciamo is_anonimo qui per Flutter
+                "is_anonimo": False,
                 "opzione_index": v.opzione_index,
-                "posizione_classifica": dati_utente_completi.posizione_classifica # 🔥 ECCO IL DATO PER FLUTTER!
             })
-        
-            
+
     return {"successo": True, "dati": risultato}
 
 
