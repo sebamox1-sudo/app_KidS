@@ -3,7 +3,7 @@ from apscheduler.triggers.cron import CronTrigger
 
 from sqlalchemy.orm import Session, joinedload
 from app.database import SessionLocal
-from app.models.modelli import Utente, Streak, TokenDispositivoFCM
+from app.models.modelli import Utente, Streak, TokenDispositivoFCM, RefreshToken
 from app.services.fcm_service import manda_notifica
 from datetime import datetime, timezone, timedelta
 import random
@@ -127,6 +127,23 @@ def azzera_streak_scadute():
         db.close()
 
 
+# JOB 4 — Pulizia refresh token scaduti/revocati (ogni giorno)
+def pulisci_refresh_token():
+    db = _get_db()
+    try:
+        limite = datetime.now(timezone.utc) - timedelta(days=7)
+        cancellati = db.query(RefreshToken).filter(
+            (RefreshToken.revocato == True) | (RefreshToken.scadenza < limite)
+        ).delete()
+        db.commit()
+        if cancellati:
+            print(f"🧹 Rimossi {cancellati} refresh token scaduti/revocati.")
+    except Exception as e:
+        print(f"Errore pulizia token: {e}")
+    finally:
+        db.close()
+
+
 
 # ============================================================
 # AVVIO SCHEDULER
@@ -153,6 +170,13 @@ def avvia_scheduler():
         azzera_streak_scadute,
         CronTrigger(minute=30),
         id="azzera_streak",
+        replace_existing=True,
+    )
+
+    scheduler.add_job(
+        pulisci_refresh_token,
+        CronTrigger(hour=3, minute=0),  # alle 3 di notte
+        id="pulizia_token",
         replace_existing=True,
     )
 

@@ -10,9 +10,13 @@ from app.services.auth_service import (
     crea_refresh_token, scadenza_refresh_token,
 )
 from app.dependencies import get_utente_corrente
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+from fastapi import Request
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
+limiter = Limiter(key_func=get_remote_address)
 
 def _crea_token_coppia(utente: Utente, db: Session) -> tuple[str, str]:
     """Crea access token + refresh token e salva il refresh nel DB."""
@@ -34,7 +38,8 @@ def _crea_token_coppia(utente: Utente, db: Session) -> tuple[str, str]:
 # REGISTRAZIONE
 # ============================================================
 @router.post("/registrati", response_model=TokenResponse, status_code=201)
-def registrati(dati: RegistrazioneRequest, db: Session = Depends(get_db)):
+@limiter.limit("3/minute")
+def registrati(request: Request, dati: RegistrazioneRequest, db: Session = Depends(get_db)):
     if db.query(Utente).filter(Utente.email == dati.email).first():
         raise HTTPException(status_code=400, detail="Email già registrata")
 
@@ -65,7 +70,8 @@ def registrati(dati: RegistrazioneRequest, db: Session = Depends(get_db)):
 # LOGIN
 # ============================================================
 @router.post("/login", response_model=TokenResponse)
-def login(dati: LoginRequest, db: Session = Depends(get_db)):
+@limiter.limit("5/minute")
+def login(request: Request, dati: LoginRequest, db: Session = Depends(get_db)):
     utente = db.query(Utente).filter(Utente.email == dati.email).first()
     if not utente or not verifica_password(dati.password, utente.password_hash or ""):
         raise HTTPException(status_code=401, detail="Email o password errati")
