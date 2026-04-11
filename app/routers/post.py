@@ -308,6 +308,9 @@ async def vota_post(post_id: int, dati: VotoPostRequest,
     post = db.query(Post).filter(Post.id == post_id).first()
     if not post:
         raise HTTPException(status_code=404, detail="Post non trovato")
+    
+    if post.autore_id == me.id:
+        raise HTTPException(status_code=403, detail="Non puoi votare il tuo post")
 
     esiste = db.query(Voto).filter(
         Voto.utente_id == me.id, Voto.post_id == post_id).first()
@@ -318,9 +321,13 @@ async def vota_post(post_id: int, dati: VotoPostRequest,
         utente_id=me.id,
         post_id=post_id,
         voto=dati.voto,
-        anonimo=dati.anonimo,
+        anonimo=True,
     )
     db.add(voto)
+
+    # ── Aggiorna contatori denormalizzati ──
+    post.somma_voti = (post.somma_voti or 0) + dati.voto
+    post.num_voti = (post.num_voti or 0) + 1
 
     # ✨ AGGIORNAMENTO BADGE: Incrementiamo i tuoi voti dati
     me.voti_dati += 1
@@ -335,7 +342,7 @@ async def vota_post(post_id: int, dati: VotoPostRequest,
         )
         db.add(Notifica(
             destinatario_id=post.autore_id,
-            mittente_id=None if dati.anonimo else me.id,
+            mittente_id=None,
             tipo="voto",
             testo=testo,
         ))

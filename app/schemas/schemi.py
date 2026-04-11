@@ -109,7 +109,6 @@ class PostResponse(BaseModel):
 
 class VotoPostRequest(BaseModel):
     voto: float
-    anonimo: bool = False
 
     @field_validator("voto")
     @classmethod

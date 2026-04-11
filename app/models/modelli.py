@@ -91,6 +91,10 @@ class Post(Base):
     amici_taggati = Column(String(500), default="")
     creato_at = Column(DateTime(timezone=True), server_default=func.now())
 
+    # ── CONTATORI DENORMALIZZATI ──
+    somma_voti = Column(Float, default=0.0)
+    num_voti = Column(Integer, default=0)
+
     autore = relationship("Utente", back_populates="post")
     like = relationship("Like", back_populates="post", cascade="all, delete")
     commenti = relationship("Commento", back_populates="post", cascade="all, delete")
@@ -104,7 +108,7 @@ class Post(Base):
     def media_voti(self):
         if not self.voti:
             return None
-        return sum(v.voto for v in self.voti) / len(self.voti)
+        return self.somma_voti / self.num_voti
 
 
 class Like(Base):
@@ -118,6 +122,10 @@ class Like(Base):
     utente = relationship("Utente", back_populates="like")
     post = relationship("Post", back_populates="like")
 
+    __table_args__ = (
+        UniqueConstraint("utente_id", "post_id", name="uq_like_utente_post"),
+    )
+
 
 class Voto(Base):
     __tablename__ = "voti"
@@ -126,11 +134,15 @@ class Voto(Base):
     utente_id = Column(Integer, ForeignKey("utenti.id", ondelete="CASCADE"), nullable=True)
     post_id = Column(Integer, ForeignKey("post.id", ondelete="CASCADE"), nullable=False)
     voto = Column(Float, nullable=False)
-    anonimo = Column(Boolean, default=False)
+    anonimo = Column(Boolean, default=True)
     creato_at = Column(DateTime(timezone=True), server_default=func.now())
 
     utente = relationship("Utente")
     post = relationship("Post", back_populates="voti")
+
+    __table_args__ = (
+        UniqueConstraint("utente_id", "post_id", name="uq_voto_utente_post"),
+    )
 
 
 class Commento(Base):
