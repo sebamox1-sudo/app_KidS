@@ -418,6 +418,21 @@ async def aggiungi_commento(
     tipo="commento",
     extra={"post_id": post.id, "mittente_username": me.username,
            "mittente_nome": me.nome, "mittente_id": me.id})
+    
+    if dati.risposta_a_id:
+        parent = db.query(Commento).filter(Commento.id == dati.risposta_a_id).first()
+        if parent and parent.autore_id != me.id and parent.autore_id != post.autore_id:
+            db.add(Notifica(
+                destinatario_id=parent.autore_id,
+                mittente_id=me.id,
+                tipo="risposta",
+                testo=f"{me.nome} ha risposto: \"{dati.testo[:50]}\"",
+            ))
+            manda_notifica(db, parent.autore_id,
+                "↩️ Nuova risposta!",
+                f"{me.nome}: {dati.testo[:50]}",
+                tipo="risposta",
+                extra={"post_id": post.id})
 
     # ── BROADCAST REAL-TIME ──
     await broadcast_commento(post_id, {
