@@ -8,15 +8,26 @@ from app.dependencies import get_utente_corrente
 
 router = APIRouter(prefix="/classifica", tags=["Classifica"])
 
+from datetime import datetime, timezone, timedelta
 
 def _utente_classifica(u: Utente) -> dict:
+    """Versione leggera per la classifica — con streak in tempo reale."""
+    streak_val = 0
+    if u.streak and u.streak.giorni > 0 and u.streak.ultimo_post:
+        ultimo = u.streak.ultimo_post
+        if ultimo.tzinfo is None:
+            ultimo = ultimo.replace(tzinfo=timezone.utc)
+        # Se l'ultimo post è entro 48h, la streak è valida
+        if (datetime.now(timezone.utc) - ultimo).total_seconds() < 48 * 3600:
+            streak_val = u.streak.giorni
+
     return {
         "id": u.id,
         "nome": u.nome,
         "username": u.username,
         "foto_profilo": u.foto_profilo,
+        "streak_giorni": streak_val,
     }
-
 
 @router.get("/")
 def get_classifica(
@@ -29,12 +40,16 @@ def get_classifica(
         Utente.id.asc()
     ).limit(limit).all()
 
-    return [{
-        "posizione": i + 1,
-        "utente": _utente_classifica(u),
-        "streak": u.streak.giorni if u.streak else 0,
-        "sono_io": u.id == me.id,
-    } for i, u in enumerate(utenti)]
+    risultato = []
+    for i, u in enumerate(utenti):
+        dati = _utente_classifica(u)
+        risultato.append({
+            "posizione": i + 1,
+            "utente": dati,
+            "streak": dati["streak_giorni"],
+            "sono_io": u.id == me.id,
+        })
+    return risultato
 
 
 @router.get("/amici")
@@ -59,12 +74,16 @@ def get_classifica_amici(
         .all()
     )
 
-    return [{
-        "posizione": i + 1,
-        "utente": _utente_classifica(u),
-        "streak": u.streak.giorni if u.streak else 0,
-        "sono_io": u.id == me.id,
-    } for i, u in enumerate(utenti)]
+    risultato = []
+    for i, u in enumerate(utenti):
+        dati = _utente_classifica(u)
+        risultato.append({
+            "posizione": i + 1,
+            "utente": dati,
+            "streak": dati["streak_giorni"],
+            "sono_io": u.id == me.id,
+        })
+    return risultato
 
 
 @router.get("/mia-posizione")
