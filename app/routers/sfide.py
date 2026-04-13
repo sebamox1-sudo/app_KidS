@@ -97,10 +97,10 @@ def crea_sfida(
     db.add(sfida)
     db.flush()
 
-    if dati.visibilita == "selezionati" and dati.amici_usernames:
+    if dati.visibilita == "selezionati" and dati.amici_invitati:
         # ── SFIDA PRIVATA: invita solo gli amici scelti ──
         amici_invitati = db.query(Utente).filter(
-            Utente.username.in_(dati.amici_usernames)
+            Utente.username.in_(dati.amici_invitati)
         ).all()
 
         for amico in amici_invitati:
@@ -120,20 +120,20 @@ def crea_sfida(
             ))
 
             manda_notifica(
-    db=db,
-    destinatario_id=amico.id,
-    titolo="⚡ Nuova sfida!",
-    corpo=f"{me.nome} ti ha sfidato: {dati.tema[:40]}",
-    tipo="sfida",
-    extra={
-        "sfida_id": sfida.id,
-        "tema": dati.tema,
-        "mittente_id": me.id,
-        "mittente_username": me.username,
-        "mittente_nome": me.nome,
-        "mittente_foto": me.foto_profilo or "",
-    },
-)
+                db=db,
+                destinatario_id=amico.id,
+                titolo="⚡ Nuova sfida!",
+                corpo=f"{me.nome} ti ha sfidato: {dati.tema[:40]}",
+                tipo="sfida",
+                extra={
+                    "sfida_id": sfida.id,
+                    "tema": dati.tema,
+                    "mittente_id": me.id,
+                    "mittente_username": me.username,
+                    "mittente_nome": me.nome,
+                    "mittente_foto": me.foto_profilo or "",
+                },
+            )
 
         if not amici_invitati:
             raise HTTPException(
@@ -151,19 +151,19 @@ def crea_sfida(
             ))
 
             manda_notifica(
-    db=db,
-    destinatario_id=follow.follower_id,
-    titolo="⚡ Nuova sfida!",
-    corpo=f"{me.nome} ha lanciato una sfida: {dati.tema[:40]}",
-    tipo="sfida",
-    extra={
-        "sfida_id": sfida.id,
-        "tema": dati.tema,
-        "mittente_id": me.id,
-        "mittente_username": me.username,
-        "mittente_nome": me.nome,
-    },
-)
+                db=db,
+                destinatario_id=follow.follower_id,
+                titolo="⚡ Nuova sfida!",
+                corpo=f"{me.nome} ha lanciato una sfida: {dati.tema[:40]}",
+                tipo="sfida",
+                extra={
+                    "sfida_id": sfida.id,
+                    "tema": dati.tema,
+                    "mittente_id": me.id,
+                    "mittente_username": me.username,
+                    "mittente_nome": me.nome,
+                },
+            )
 
     db.commit()
     db.refresh(sfida)
