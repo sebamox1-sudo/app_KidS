@@ -7,7 +7,7 @@ from app.dependencies import get_utente_corrente
 from app.routers.auth import _utente_response, _utente_public_response
 import aiofiles, os, uuid
 from typing import List
- 
+from datetime import datetime
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from fastapi import Request
@@ -300,9 +300,8 @@ async def upload_foto_profilo(
 
     # CARICAMENTO CLOUD (tramite il nostro nuovo servizio)
     # Passiamo il file e indichiamo che va nella cartella "profili" del bucket
-    url_pubblico = await carica_e_comprimi_foto(foto, cartella="profili")
-
-    # Salviamo solo il link nel nostro database
+    url_base = await carica_e_comprimi_foto(foto, cartella="profili")
+    url_pubblico = f"{url_base}?v={int(datetime.now().timestamp())}"
     me.foto_profilo = url_pubblico
     db.commit()
     db.refresh(me)
