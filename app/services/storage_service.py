@@ -4,6 +4,9 @@ import uuid
 from PIL import Image
 from supabase import create_client, Client
 from fastapi import UploadFile, HTTPException
+import logging
+
+logger = logging.getLogger(__name__)
 
 # 1. Recuperiamo le chiavi di Supabase (che hai impostato su Railway)
 SUPABASE_URL = os.getenv("SUPABASE_URL")
@@ -57,5 +60,5 @@ async def carica_e_comprimi_foto(file: UploadFile, cartella: str, max_size: int 
         return url_pubblico
         
     except Exception as e:
-        print(f"Errore durante l'upload su Supabase: {e}")
-        raise HTTPException(status_code=500, detail="Errore nel caricamento dell'immagine nel cloud.")
+        logger.error("Upload Supabase fallito", exc_info=True, extra={"cartella": cartella})
+        raise HTTPException(status_code=500, detail="Errore nel caricamento dell'immagine.")

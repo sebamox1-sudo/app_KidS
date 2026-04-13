@@ -11,7 +11,7 @@ from app.models.modelli import (
 )
 from app.schemas.schemi import SfidaRequest, SfidaResponse
 from app.dependencies import get_utente_corrente
-from app.routers.auth import _utente_response
+from app.routers.auth import _utente_response, _utente_public_response
 from app.services.fcm_service import manda_notifica
 from app.services.storage_service import carica_e_comprimi_foto
 from app.routers.ws_sfide import broadcast_voto
@@ -276,7 +276,7 @@ def get_partecipazioni(
 
     return [{
         "id": p.id,
-        "utente": _utente_response(p.utente, db),
+        "utente": _utente_public_response(p.utente, db),
         "foto_url": p.foto_url,
         "media_voti": p.media_voti,
         "ho_votato": any(v.votante_id == me.id for v in p.voti),
@@ -396,7 +396,7 @@ def _utente_puo_vedere(sfida: Sfida, utente: Utente, db: Session) -> bool:
 def _sfida_response(s: Sfida, utente_id: int, db: Session) -> dict:
     invitati = []
     if s.visibilita == "selezionati":
-        invitati = [_utente_response(inv.invitato, db) for inv in s.inviti]
+        invitati = [_utente_public_response(inv.invitato, db) for inv in s.inviti]
 
     sono_invitato = any(
         inv.invitato_id == utente_id for inv in s.inviti
@@ -407,7 +407,7 @@ def _sfida_response(s: Sfida, utente_id: int, db: Session) -> dict:
     for p in s.partecipazioni:
         partecipazioni_list.append({
             "id": p.id,
-            "utente": _utente_response(p.utente, db),
+            "utente": _utente_public_response(p.utente, db),
             "foto_url": p.foto_url,
             "media_voti": p.media_voti,
             "ho_votato": any(v.votante_id == utente_id for v in p.voti),
@@ -420,13 +420,13 @@ def _sfida_response(s: Sfida, utente_id: int, db: Session) -> dict:
 
     return {
         "id": s.id,
-        "autore": _utente_response(s.autore, db),
+        "autore": _utente_public_response(s.autore, db),
         "tema": s.tema,
         "durata_ore": s.durata_ore,
         "scadenza": s.scadenza,
         "is_scaduta": s.is_scaduta,
         "visibilita": s.visibilita,
-        "vincitore": _utente_response(s.vincitore, db) if s.vincitore else None,
+        "vincitore": _utente_public_response(s.vincitore, db) if s.vincitore else None,
         "num_partecipanti": len(s.partecipazioni),
         "ho_partecipato": any(p.utente_id == utente_id for p in s.partecipazioni),
         "sono_invitato": sono_invitato,

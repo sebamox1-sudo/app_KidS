@@ -6,7 +6,7 @@ from app.database import get_db
 from app.models.modelli import Sondaggio, VotoSondaggio, Notifica, Utente
 from app.schemas.schemi import SondaggioRequest, SondaggioResponse, VotoSondaggioRequest
 from app.dependencies import get_utente_corrente
-from app.routers.auth import _utente_response
+from app.routers.auth import _utente_response, _utente_public_response
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 
@@ -219,7 +219,7 @@ def _sondaggio_response_batch(
 
     return SondaggioResponse(
         id=s.id,
-        autore=_utente_response(s.autore, db),
+        autore=_utente_public_response(s.autore, db),
         domanda=s.domanda,
         opzioni=opzioni,
         voti_per_opzione=voti_per_opzione,

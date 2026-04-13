@@ -6,7 +6,7 @@ from app.models.modelli import Post, Like, Voto, Commento, Notifica, Streak, Blo
 from app.schemas.schemi import PostResponse, VotoPostRequest, CommentoRequest, CommentoResponse
 from app.dependencies import get_utente_corrente
 from app.models.modelli import Utente
-from app.routers.auth import _utente_response
+from app.routers.auth import _utente_response, _utente_public_response
 from app.services.badge_service import verifica_badge
 import aiofiles, os, uuid
 from datetime import datetime, timezone, timedelta
@@ -582,7 +582,7 @@ def _post_response(post: Post, utente_id: int, db: Session) -> PostResponse:
 
     return PostResponse(
         id=post.id,
-        autore=_utente_response(post.autore, db),
+        autore=_utente_public_response(post.autore, db),
         foto_principale=post.foto_principale,
         foto_selfie=post.foto_selfie,
         testo=post.testo,
@@ -605,7 +605,7 @@ def _post_response_batch(
     """Risposta post per il feed — usa dati pre-caricati in batch (zero query extra)."""
     return PostResponse(
         id=post.id,
-        autore=_utente_response(post.autore, db),
+        autore=_utente_public_response(post.autore, db),
         foto_principale=post.foto_principale,
         foto_selfie=post.foto_selfie,
         testo=post.testo,
@@ -622,7 +622,7 @@ def _post_response_batch(
 def _commento_response(c: Commento, db: Session) -> CommentoResponse:
     return CommentoResponse(
         id=c.id,
-        autore=_utente_response(c.autore, db),
+        autore=_utente_public_response(c.autore, db),
         testo=c.testo,
         risposta_a_id=c.risposta_a_id,
         risposte=[_commento_response(r, db) for r in (c.risposte or [])],  

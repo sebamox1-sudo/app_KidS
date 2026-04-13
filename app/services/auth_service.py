@@ -8,8 +8,8 @@ import os
 
 load_dotenv()
 
-SECRET_KEY = os.getenv("SECRET_KEY", "chiave_di_sviluppo_cambiala")
-ALGORITHM = os.getenv("ALGORITHM", "HS256")
+SECRET_KEY = os.environ["SECRET_KEY"]
+ALGORITHM = "HS256"
 
 # ── Durate token ─────────────────────────────────────────────
 # Access token: breve durata — se rubato, scade presto

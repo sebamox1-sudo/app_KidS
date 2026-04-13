@@ -5,7 +5,7 @@ from app.database import get_db
 from app.models.modelli import Notifica, Utente
 from app.schemas.schemi import NotificaResponse
 from app.dependencies import get_utente_corrente
-from app.routers.auth import _utente_response
+from app.routers.auth import _utente_response, _utente_public_response
 
 router = APIRouter(prefix="/notifiche", tags=["Notifiche"])
 
@@ -112,7 +112,7 @@ def _notifica_response(n: Notifica, db: Session) -> NotificaResponse:
         tipo=n.tipo,
         testo=n.testo,
         letta=n.letta,
-        mittente=_utente_response(n.mittente, db) if n.mittente else None,
+        mittente=_utente_public_response(n.mittente, db) if n.mittente else None,
         richiesta_id=richiesta_id,
         stato_richiesta=stato_richiesta, # ✨ 4. LO SPEDIAMO A FLUTTER!
         creato_at=n.creato_at,

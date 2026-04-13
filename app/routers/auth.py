@@ -2,9 +2,13 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from datetime import datetime, timezone
+from pydantic import BaseModel, field_validator
 from app.database import get_db
 from app.models.modelli import Utente, Streak, Follow, Post, RefreshToken
-from app.schemas.schemi import RegistrazioneRequest, LoginRequest, TokenResponse, UtenteResponse
+from app.schemas.schemi import (
+    RegistrazioneRequest, LoginRequest, TokenResponse,
+    UtenteResponse, UtentePublicResponse,
+)
 from app.services.auth_service import (
     hash_password, verifica_password, crea_token,
     crea_refresh_token, scadenza_refresh_token,
@@ -18,13 +22,30 @@ router = APIRouter(prefix="/auth", tags=["Auth"])
 
 limiter = Limiter(key_func=get_remote_address)
 
+
+# ============================================================
+# REQUEST MODELS TIPATI (fix C-3 / H-4)
+# ============================================================
+class LogoutRequest(BaseModel):
+    """Tipato — Pydantic valida prima che il codice venga eseguito."""
+    refresh_token: str
+
+    @field_validator("refresh_token")
+    @classmethod
+    def token_formato_valido(cls, v):
+        # secrets.token_hex(64) produce sempre esattamente 128 caratteri hex.
+        # Un token con lunghezza diversa è sicuramente malformato.
+        if len(v) != 128:
+            raise ValueError("Token non valido")
+        return v
+
+
 def _crea_token_coppia(utente: Utente, db: Session) -> tuple[str, str]:
     """Crea access token + refresh token e salva il refresh nel DB."""
     access = crea_token({"sub": str(utente.id)})
     refresh = crea_refresh_token()
     scadenza = scadenza_refresh_token()
 
-    # Salva refresh token nel DB
     db.add(RefreshToken(
         utente_id=utente.id,
         token=refresh,
@@ -88,12 +109,12 @@ def login(request: Request, dati: LoginRequest, db: Session = Depends(get_db)):
 # REFRESH — rinnova l'access token senza rifare il login
 # ============================================================
 @router.post("/refresh")
-def refresh(dati: dict, db: Session = Depends(get_db)):
+@limiter.limit("10/minute")
+def refresh(request: Request, dati: dict, db: Session = Depends(get_db)):
     token_str = dati.get("refresh_token")
     if not token_str:
         raise HTTPException(status_code=400, detail="Refresh token mancante")
 
-    # Cerca nel DB
     rt = db.query(RefreshToken).filter(
         RefreshToken.token == token_str,
         RefreshToken.revocato == False,
@@ -102,7 +123,6 @@ def refresh(dati: dict, db: Session = Depends(get_db)):
     if not rt:
         raise HTTPException(status_code=401, detail="Refresh token non valido")
 
-    # Controlla scadenza
     ora = datetime.now(timezone.utc)
     scadenza = rt.scadenza.replace(tzinfo=timezone.utc) \
         if rt.scadenza.tzinfo is None else rt.scadenza
@@ -112,11 +132,9 @@ def refresh(dati: dict, db: Session = Depends(get_db)):
         db.commit()
         raise HTTPException(status_code=401, detail="Refresh token scaduto")
 
-    # Revoca il vecchio refresh token (rotation)
     rt.revocato = True
     db.flush()
 
-    # Emetti nuova coppia di token
     utente = db.query(Utente).filter(Utente.id == rt.utente_id).first()
     if not utente:
         raise HTTPException(status_code=404, detail="Utente non trovato")
@@ -130,23 +148,34 @@ def refresh(dati: dict, db: Session = Depends(get_db)):
 
 
 # ============================================================
-# LOGOUT — revoca il refresh token
+# LOGOUT — revoca il refresh token (fix H-4)
 # ============================================================
 @router.post("/logout")
-def logout(dati: dict, db: Session = Depends(get_db)):
-    token_str = dati.get("refresh_token")
-    if token_str:
-        rt = db.query(RefreshToken).filter(
-            RefreshToken.token == token_str
-        ).first()
-        if rt:
-            rt.revocato = True
-            db.commit()
+@limiter.limit("10/minute")
+def logout(
+    request: Request,
+    dati: LogoutRequest,
+    db: Session = Depends(get_db),
+    me: Utente = Depends(get_utente_corrente),  # FIX H-4: auth obbligatoria
+):
+    """
+    Revoca il refresh token dell'utente autenticato.
+    SICUREZZA: verifica che il token appartenga a ME (me.id) —
+    impedisce di revocare sessioni di altri utenti.
+    """
+    rt = db.query(RefreshToken).filter(
+        RefreshToken.token == dati.refresh_token,
+        RefreshToken.utente_id == me.id,   # ← solo il proprietario
+    ).first()
+    if rt:
+        rt.revocato = True
+        db.commit()
+    # Risposta sempre positiva: non rivela se il token esisteva o no.
     return {"messaggio": "Logout effettuato"}
 
 
 # ============================================================
-# PROFILO CORRENTE
+# PROFILO CORRENTE — schema PRIVATO con email
 # ============================================================
 @router.get("/me", response_model=UtenteResponse)
 def get_me(
@@ -157,9 +186,14 @@ def get_me(
 
 
 # ============================================================
-# HELPER — COUNT queries efficienti (no N+1)
+# HELPER — _utente_response (PRIVATO, con email) — solo per /me
 # ============================================================
 def _utente_response(u: Utente, db: Session) -> UtenteResponse:
+    """
+    Restituisce lo schema PRIVATO (con email).
+    Usare SOLO per endpoint dell'utente su sé stesso:
+    /auth/me, /auth/login, /auth/registrati, /utenti/me/profilo, /utenti/me/foto
+    """
     num_follower = db.query(func.count(Follow.id)).filter(
         Follow.seguito_id == u.id
     ).scalar() or 0
@@ -169,16 +203,14 @@ def _utente_response(u: Utente, db: Session) -> UtenteResponse:
     ).scalar() or 0
 
     num_post = db.query(func.count(Post.id)).filter(
-    Post.autore_id == u.id,
-    Post.foto_principale.isnot(None),
+        Post.autore_id == u.id,
+        Post.foto_principale.isnot(None),
     ).scalar() or 0
 
-     # Amici = follow reciproco
     seguiti_ids = {f.seguito_id for f in u.seguiti_rel}
     follower_ids = {f.follower_id for f in u.follower_rel}
     num_amici = len(seguiti_ids & follower_ids)
 
-    # Lista dei tipi di badge già sbloccati dall'utente
     badge_sbloccati = [b.tipo for b in u.badge]
 
     return UtenteResponse(
@@ -196,6 +228,51 @@ def _utente_response(u: Utente, db: Session) -> UtenteResponse:
         streak_ultimo_post=u.streak.ultimo_post if u.streak else None,
         onboarding_completato=u.onboarding_completato,
         creato_at=u.creato_at,
+        num_amici=num_amici,
+        badge_sbloccati=badge_sbloccati,
+    )
+
+
+# ============================================================
+# HELPER — _utente_public_response (PUBBLICO, senza email)
+# ============================================================
+def _utente_public_response(u: Utente, db: Session) -> UtentePublicResponse:
+    """
+    Restituisce lo schema PUBBLICO (senza email, senza dati interni).
+    Usare per: GET /utenti/{username}, autore nei post/commenti/sfide/sondaggi,
+               mittente nelle notifiche, liste follower/seguiti/amici altrui.
+    """
+    num_follower = db.query(func.count(Follow.id)).filter(
+        Follow.seguito_id == u.id
+    ).scalar() or 0
+
+    num_seguiti = db.query(func.count(Follow.id)).filter(
+        Follow.follower_id == u.id
+    ).scalar() or 0
+
+    num_post = db.query(func.count(Post.id)).filter(
+        Post.autore_id == u.id,
+        Post.foto_principale.isnot(None),
+    ).scalar() or 0
+
+    seguiti_ids = {f.seguito_id for f in u.seguiti_rel}
+    follower_ids = {f.follower_id for f in u.follower_rel}
+    num_amici = len(seguiti_ids & follower_ids)
+
+    badge_sbloccati = [b.tipo for b in u.badge]
+
+    return UtentePublicResponse(
+        id=u.id,
+        nome=u.nome,
+        username=u.username,
+        bio=u.bio or "",
+        foto_profilo=u.foto_profilo,
+        is_privato=u.is_privato,
+        num_follower=num_follower,
+        num_seguiti=num_seguiti,
+        num_post=num_post,
+        streak_giorni=u.streak.giorni if u.streak else 0,
+        streak_ultimo_post=u.streak.ultimo_post if u.streak else None,
         num_amici=num_amici,
         badge_sbloccati=badge_sbloccati,
     )

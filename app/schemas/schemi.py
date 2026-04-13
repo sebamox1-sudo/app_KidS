@@ -28,11 +28,16 @@ class RegistrazioneRequest(BaseModel):
     @classmethod
     def password_valida(cls, v):
         if len(v) < 8:
-            raise ValueError("La password deve avere almeno 8 caratteri 🔒")
+            raise ValueError("La password deve avere almeno 8 caratteri")
+        # FIX H-5: bcrypt tronca silenziosamente a 72 byte.
+        # Senza questo check, "password123A" e "password123A<+64 caratteri>"
+        # risultano identiche dopo l'hash → bypass autenticazione.
+        if len(v) > 72:
+            raise ValueError("La password non può superare 72 caratteri")
         if not any(char.isdigit() for char in v):
-            raise ValueError("La password deve contenere almeno un numero 🔢")
+            raise ValueError("La password deve contenere almeno un numero")
         if not any(char.isupper() for char in v):
-            raise ValueError("La password deve contenere almeno una maiuscola 🔠")
+            raise ValueError("La password deve contenere almeno una maiuscola")
         return v
 
 
@@ -49,13 +54,19 @@ class TokenResponse(BaseModel):
 
 
 # ============================================================
-# UTENTE
+# UTENTE — DUE SCHEMA SEPARATI (fix C-4)
 # ============================================================
-class UtenteResponse(BaseModel):
+
+class UtentePublicResponse(BaseModel):
+    """
+    Schema PUBBLICO — restituito quando altri utenti vedono un profilo.
+    NON contiene email o dati interni sensibili.
+    Usato in: GET /utenti/{username}, autore nei post/commenti/sfide/sondaggi,
+              mittente nelle notifiche, liste follower/seguiti/amici altrui.
+    """
     id: int
     nome: str
     username: str
-    email: str
     bio: str
     foto_profilo: Optional[str]
     is_privato: bool
@@ -63,20 +74,44 @@ class UtenteResponse(BaseModel):
     num_seguiti: int
     num_post: int = 0
     streak_giorni: int
-    onboarding_completato: bool
+    posizione_classifica: int = 0
+    streak_ultimo_post: Optional[datetime] = None
+    num_amici: int = 0
+    ultimi_post: List[dict] = []
+    badge_sbloccati: List[str] = []
+    model_config = {"from_attributes": True}
+
+
+class UtenteResponse(BaseModel):
+    """
+    Schema PRIVATO — restituito SOLO all'utente autenticato per sé stesso.
+    Contiene email e dati interni. Usato in: GET /auth/me, POST /auth/login,
+    POST /auth/registrati, PATCH /utenti/me/profilo, POST /utenti/me/foto.
+    """
+    id: int
+    nome: str
+    username: str
+    email: str                      # ← solo per l'utente stesso
+    bio: str
+    foto_profilo: Optional[str]
+    is_privato: bool
+    num_follower: int
+    num_seguiti: int
+    num_post: int = 0
+    streak_giorni: int
+    onboarding_completato: bool     # ← dato interno
     creato_at: datetime
     sfide_partecipate: int = 0
     sfide_vinte: int = 0
     voti_dati: int = 0
     commenti_scritti: int = 0
     like_ricevuti: int = 0
-    posizione_classifica : int = 0
+    posizione_classifica: int = 0
     streak_ultimo_post: Optional[datetime] = None
     num_amici: int = 0
     model_config = {"from_attributes": True}
     ultimi_post: List[dict] = []
     badge_sbloccati: List[str] = []
-
 
 
 class AggiornaProfilo(BaseModel):
@@ -92,7 +127,7 @@ class AggiornaProfilo(BaseModel):
 # ============================================================
 class PostResponse(BaseModel):
     id: int
-    autore: UtenteResponse
+    autore: UtentePublicResponse    # ← pubblico: niente email dell'autore
     foto_principale: Optional[str] = None
     foto_selfie: Optional[str] = None
     testo: Optional[str] = None
@@ -137,7 +172,7 @@ class CommentoRequest(BaseModel):
 
 class CommentoResponse(BaseModel):
     id: int
-    autore: UtenteResponse
+    autore: UtentePublicResponse    # ← pubblico
     testo: str
     risposta_a_id: Optional[int]
     risposte: List["CommentoResponse"] = []
@@ -178,14 +213,14 @@ class VotoSondaggioRequest(BaseModel):
 
 class SondaggioResponse(BaseModel):
     id: int
-    autore: UtenteResponse
+    autore: UtentePublicResponse    # ← pubblico
     domanda: str
     opzioni: List[str]
     voti_per_opzione: List[int]
     totale_voti: int
     ho_votato: bool = False
     mia_opzione: Optional[int] = None
-    scadenza: datetime  # AGGIUNTO — quando scade il sondaggio
+    scadenza: datetime
     creato_at: datetime
 
     model_config = {"from_attributes": True}
@@ -198,7 +233,7 @@ class SfidaRequest(BaseModel):
     tema: str
     durata_ore: int
     visibilita: str = "tutti"
-    amici_invitati: List[str] = []  # username degli amici (allineato con sfide.py)
+    amici_invitati: List[str] = []
 
     @field_validator("durata_ore")
     @classmethod
@@ -222,16 +257,16 @@ class SfidaRequest(BaseModel):
 
 class SfidaResponse(BaseModel):
     id: int
-    autore: UtenteResponse
+    autore: UtentePublicResponse            # ← pubblico
     tema: str
     durata_ore: int
     scadenza: datetime
     is_scaduta: bool
     visibilita: str = "tutti"
-    vincitore: Optional[UtenteResponse]
+    vincitore: Optional[UtentePublicResponse]   # ← pubblico
     num_partecipanti: int
     ho_partecipato: bool = False
-    invitati: List[UtenteResponse] = []
+    invitati: List[UtentePublicResponse] = []   # ← pubblico
     creato_at: datetime
 
     model_config = {"from_attributes": True}
@@ -245,7 +280,7 @@ class NotificaResponse(BaseModel):
     tipo: str
     testo: str
     letta: bool
-    mittente: Optional[UtenteResponse] = None
+    mittente: Optional[UtentePublicResponse] = None  # ← pubblico
     richiesta_id: Optional[int] = None
     stato_richiesta: Optional[str] = None
     creato_at: datetime

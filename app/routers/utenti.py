@@ -2,9 +2,9 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.modelli import Utente, Follow, BadgeUtente, Notifica, RichiestaFollow, Post
-from app.schemas.schemi import UtenteResponse, AggiornaProfilo, BadgeResponse
+from app.schemas.schemi import UtenteResponse, UtentePublicResponse, AggiornaProfilo, BadgeResponse
 from app.dependencies import get_utente_corrente
-from app.routers.auth import _utente_response
+from app.routers.auth import _utente_response, _utente_public_response
 import aiofiles, os, uuid
 from typing import List
  
@@ -79,7 +79,7 @@ def get_richieste_ricevute(
     ).all()
     return [{
         "id": r.id,
-        "richiedente": _utente_response(r.richiedente, db),
+        "richiedente": _utente_public_response(r.richiedente, db),
         "creato_at": r.creato_at,
     } for r in richieste]
 
@@ -103,7 +103,7 @@ def get_richieste_inviate(db: Session = Depends(get_db), me: Utente = Depends(ge
     return {"successo": True, "dati": risultati}
 
 
-@router.get("/me/seguiti", response_model=List[UtenteResponse])
+@router.get("/me/seguiti", response_model=List[UtentePublicResponse])
 def get_miei_seguiti(
     db: Session = Depends(get_db),
     me: Utente = Depends(get_utente_corrente)
@@ -111,7 +111,7 @@ def get_miei_seguiti(
     """Lista utenti che io seguo — usata per selezionare amici nelle sfide."""
     seguiti_ids = [f.seguito_id for f in me.seguiti_rel]
     utenti = db.query(Utente).filter(Utente.id.in_(seguiti_ids)).all()
-    return [_utente_response(u, db) for u in utenti]
+    return [_utente_public_response(u, db) for u in utenti]
 
 @router.get("/me/follower")
 def get_miei_follower(
@@ -121,7 +121,7 @@ def get_miei_follower(
     """Lista utenti che mi seguono."""
     follower_ids = [f.follower_id for f in me.follower_rel]
     utenti = db.query(Utente).filter(Utente.id.in_(follower_ids)).all()
-    return [_utente_response(u, db) for u in utenti]
+    return [_utente_public_response(u, db) for u in utenti]
 
 
 @router.get("/me/amici")
@@ -134,7 +134,7 @@ def get_miei_amici(
     follower_ids = {f.follower_id for f in me.follower_rel}
     amici_ids = seguiti_ids & follower_ids
     utenti = db.query(Utente).filter(Utente.id.in_(amici_ids)).all()
-    return [_utente_response(u, db) for u in utenti]
+    return [_utente_public_response(u, db) for u in utenti]
 
 
 @router.get("/{username}/follower")
@@ -156,7 +156,7 @@ def get_follower_di_utente(
     
     follower_ids = [f.follower_id for f in utente.follower_rel]
     utenti = db.query(Utente).filter(Utente.id.in_(follower_ids)).all()
-    return [_utente_response(u, db) for u in utenti]
+    return [_utente_public_response(u, db) for u in utenti]
 
 
 @router.get("/{username}/seguiti")
@@ -177,7 +177,7 @@ def get_seguiti_di_utente_pub(
     
     seguiti_ids = [f.seguito_id for f in utente.seguiti_rel]
     utenti = db.query(Utente).filter(Utente.id.in_(seguiti_ids)).all()
-    return [_utente_response(u, db) for u in utenti]
+    return [_utente_public_response(u, db) for u in utenti]
 
 
 @router.get("/{username}/amici")
@@ -200,16 +200,16 @@ def get_amici_di_utente(
     follower_ids = {f.follower_id for f in utente.follower_rel}
     amici_ids = seguiti_ids & follower_ids
     utenti = db.query(Utente).filter(Utente.id.in_(amici_ids)).all()
-    return [_utente_response(u, db) for u in utenti]
+    return [_utente_public_response(u, db) for u in utenti]
 
 
-@router.get("/{username}", response_model=UtenteResponse)
+@router.get("/{username}", response_model=UtentePublicResponse)
 def get_profilo(username: str, db: Session = Depends(get_db),
                 me: Utente = Depends(get_utente_corrente)):
     # 1. Trova l'utente
     utente = _trova_utente(username, db)
     # 2. Ottieni i dati base (nome, bio, etc.) chiamando la tua funzione esistente
-    dati_utente = _utente_response(utente, db)
+    dati_utente = _utente_public_response(utente, db)
     # Se _utente_response restituisce un oggetto Pydantic, lo trasformiamo in dizionario
     res = dati_utente.model_dump()
     # 3. ✨ IL PEZZO MANCANTE: Recupera gli ultimi post di questo utente
@@ -519,7 +519,7 @@ def cerca_utenti(
 
     risultato_finale = []
     for u in utenti:
-        dati_base = _utente_response(u, db)
+        dati_base = _utente_public_response(u, db)
         if hasattr(dati_base, "dict"):
             dati_base = dati_base.dict()
         ultimi_post = db.query(Post).filter(

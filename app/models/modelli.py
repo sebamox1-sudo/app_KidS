@@ -131,10 +131,10 @@ class Voto(Base):
     __tablename__ = "voti"
 
     id = Column(Integer, primary_key=True)
-    utente_id = Column(Integer, ForeignKey("utenti.id", ondelete="CASCADE"), nullable=True)
+    utente_id = Column(Integer, ForeignKey("utenti.id", ondelete="CASCADE"), nullable=False)
     post_id = Column(Integer, ForeignKey("post.id", ondelete="CASCADE"), nullable=False)
     voto = Column(Float, nullable=False)
-    anonimo = Column(Boolean, default=True)
+    anonimo = Column(Boolean, default=False)
     creato_at = Column(DateTime(timezone=True), server_default=func.now())
 
     utente = relationship("Utente")
