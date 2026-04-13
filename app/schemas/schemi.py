@@ -234,6 +234,7 @@ class SfidaRequest(BaseModel):
     durata_ore: int
     visibilita: str = "tutti"
     amici_invitati: List[str] = []
+    amici_usernames: Optional[List[str]] = None
 
     @field_validator("durata_ore")
     @classmethod
