@@ -277,6 +277,8 @@ def get_partecipazioni(
     return [{
         "id": p.id,
         "utente": _utente_public_response(p.utente, db),
+        "foto_profilo_autore": p.utente.foto_profilo,
+        "username_autore": p.utente.username,
         "foto_url": p.foto_url,
         "media_voti": p.media_voti,
         "ho_votato": any(v.votante_id == me.id for v in p.voti),
