@@ -31,6 +31,7 @@ async def broadcast_voto(
     sfida_id: int,
     partecipazione_id: int,
     nuova_media: float,
+    num_voti:int,
 ):
     """
     Invia il nuovo voto a tutti i client connessi alla sfida.
@@ -43,6 +44,7 @@ async def broadcast_voto(
         "type": "new_vote",
         "partecipazione_id": partecipazione_id,
         "media_voti": nuova_media,
+        "num_voti": num_voti,
     })
 
     da_rimuovere = set()

@@ -360,6 +360,7 @@ async def vota_partecipazione(
         sfida_id=p.sfida_id,
         partecipazione_id=partecipazione_id,
         nuova_media=nuova_media,
+        num_voti=p.num_voti,
     ))
 
 
