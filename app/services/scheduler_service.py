@@ -201,8 +201,6 @@ def avvia_scheduler():
         replace_existing=True,
     )
 
-    scheduler.start()
-    print("✅ Scheduler avviato!")
-
-    scheduler.start()
-    print("✅ Scheduler avviato!")
+    if not scheduler.running:
+        scheduler.start()
+        print("✅ Scheduler avviato!")
