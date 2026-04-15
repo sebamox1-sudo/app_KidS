@@ -60,7 +60,7 @@ async def pubblica_post_testuale(
 
     db.commit()
     db.refresh(post)
-    await verifica_badge(me, db)
+    verifica_badge(me, db)
     risposta = _post_response(post, me.id, db)
     return {
         **risposta.dict(),
@@ -121,7 +121,7 @@ async def pubblica_post(
     db.refresh(post)
 
     # Verifica badge e ottieni quelli nuovi
-    nuovi_badge = await verifica_badge(me, db)
+    nuovi_badge =  verifica_badge(me, db)
     # Streak aggiornata
     streak_giorni = me.streak.giorni if me.streak else 0
     # Ritorna post + streak + badge nuovi
@@ -361,7 +361,7 @@ async def vota_post(post_id: int, dati: VotoPostRequest,
     },
 )
 
-    await verifica_badge(me, db, voto_negativo=dati.voto < 5)
+    verifica_badge(me, db, voto_negativo=dati.voto < 5)
     return {"media_voti": post.media_voti}
 
 
@@ -470,7 +470,7 @@ async def aggiungi_commento(
         },
     })
     
-    await verifica_badge(me, db, nuovo_commento=True)
+    verifica_badge(me, db, nuovo_commento=True)
     return _commento_response(commento, db)
 
 

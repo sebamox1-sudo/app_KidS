@@ -13,6 +13,7 @@ from slowapi.util import get_remote_address
 from fastapi import Request
 from app.services.storage_service import carica_e_comprimi_foto
 from app.services.fcm_service import manda_notifica
+from app.services.badge_service import verifica_badge, get_catalogo_badge
 
 limiter = Limiter(key_func=get_remote_address)
 
@@ -539,6 +540,21 @@ def get_badge(username: str, db: Session = Depends(get_db),
               me: Utente = Depends(get_utente_corrente)):
     utente = _trova_utente(username, db)
     return utente.badge
+
+@router.get("/utenti/me/badge-catalogo")
+def get_mio_catalogo_badge(
+    db: Session = Depends(get_db),
+    me: Utente = Depends(get_utente_corrente),
+):
+    """
+    Ritorna TUTTI i badge (sbloccati + bloccati) per l'utente corrente.
+    Ogni badge include: tipo, nome, descrizione, icona, sbloccato (bool),
+    sbloccato_at (datetime o null).
+ 
+    Questo endpoint è fondamentale per il frontend: permette di mostrare
+    la griglia completa con badge colorati (sbloccati) e grigi (bloccati).
+    """
+    return get_catalogo_badge(me.id, db)
 
 
 # ============================================================

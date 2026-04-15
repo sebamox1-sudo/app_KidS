@@ -286,21 +286,18 @@ class Streak(Base):
 
     utente = relationship("Utente", back_populates="streak")
 
-
 class BadgeUtente(Base):
     __tablename__ = "badge_utenti"
+    __table_args__ = (
+        UniqueConstraint('utente_id', 'tipo', name='uq_utente_badge'),
+    )
 
     id = Column(Integer, primary_key=True)
-    utente_id = Column(Integer, ForeignKey("utenti.id", ondelete = "CASCADE"), nullable=False)
+    utente_id = Column(Integer, ForeignKey("utenti.id"), nullable=False)
     tipo = Column(String(50), nullable=False)
     sbloccato_at = Column(DateTime(timezone=True), server_default=func.now())
 
     utente = relationship("Utente", back_populates="badge")
-
-    # Impedisce badge duplicati anche in caso di race condition
-    __table_args__ = (
-        UniqueConstraint("utente_id", "tipo", name="uq_badge_utente_tipo"),
-    )
 
 
 class Notifica(Base):
