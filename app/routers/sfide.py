@@ -16,6 +16,7 @@ from app.services.fcm_service import manda_notifica
 from app.services.storage_service import carica_e_comprimi_foto
 from app.routers.ws_sfide import broadcast_voto
 import asyncio
+from app.services.badge_service import verifica_badge
 
 router = APIRouter(prefix="/sfide", tags=["Sfide"])
 
@@ -263,6 +264,8 @@ async def partecipa_sfida(
 
     db.commit()
 
+    nuovi_badge = verifica_badge(me, db, partecipazione_rapida=(tempo_trascorso <= timedelta(minutes=10)))
+
     if sfida.autore_id != me.id:
         manda_notifica(
             db=db,
@@ -279,7 +282,7 @@ async def partecipa_sfida(
                 "mittente_foto": me.foto_profilo or "",
             },
         )
-    return {"messaggio": "Partecipazione registrata"}
+    return {"messaggio": "Partecipazione registrata", "nuovi_badge": nuovi_badge}
 
 
 # ============================================================
@@ -392,6 +395,7 @@ async def vota_partecipazione(
         autore_foto.miglior_media = nuova_media
 
     db.commit()
+    nuovi_badge = verifica_badge(me, db)
     # Broadcast real-time
     asyncio.create_task(broadcast_voto(
         sfida_id=p.sfida_id,
@@ -401,7 +405,7 @@ async def vota_partecipazione(
     ))
 
 
-    return {"media_voti": nuova_media}
+    return {"media_voti": nuova_media, "nuovi_badge": nuovi_badge}
 
 
 # ============================================================

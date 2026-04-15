@@ -60,11 +60,12 @@ async def pubblica_post_testuale(
 
     db.commit()
     db.refresh(post)
-    verifica_badge(me, db)
+    nuovi_badge = verifica_badge(me, db)
     risposta = _post_response(post, me.id, db)
     return {
         **risposta.dict(),
         "streak_giorni": me.streak.giorni if me.streak else 0,
+        "nuovi_badge": nuovi_badge,
     }
 
 # ============================================================
@@ -361,8 +362,8 @@ async def vota_post(post_id: int, dati: VotoPostRequest,
     },
 )
 
-    verifica_badge(me, db, voto_negativo=dati.voto < 5)
-    return {"media_voti": post.media_voti}
+    nuovi_badge = verifica_badge(me, db)
+    return {"media_voti": post.media_voti, "nuovi_badge": nuovi_badge}
 
 
 # ============================================================
@@ -470,8 +471,9 @@ async def aggiungi_commento(
         },
     })
     
-    verifica_badge(me, db, nuovo_commento=True)
-    return _commento_response(commento, db)
+    nuovi_badge = verifica_badge(me, db)
+    resp = _commento_response(commento, db)
+    return {**resp.dict(), "nuovi_badge": nuovi_badge}
 
 
 @router.post("/streak/azzera")
