@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, selectinload
 from sqlalchemy import func
 from typing import List, Optional
 from datetime import datetime, timezone, timedelta
@@ -51,15 +51,14 @@ def get_sfide_feed(
     sfide = (
         db.query(Sfida)
         .options(
-            joinedload(Sfida.partecipazioni).joinedload(PartecipazioneSfida.utente),
-            joinedload(Sfida.partecipazioni).joinedload(PartecipazioneSfida.voti),
-            joinedload(Sfida.inviti).joinedload(InvitoSfida.invitato),
+            selectinload(Sfida.partecipazioni).joinedload(PartecipazioneSfida.utente),
+            selectinload(Sfida.partecipazioni).selectinload(PartecipazioneSfida.voti),
+            selectinload(Sfida.inviti).joinedload(InvitoSfida.invitato),
             joinedload(Sfida.autore),
             joinedload(Sfida.vincitore),
         )
         .filter(
             Sfida.autore_id.in_(autori_validi),
-            # Attive (scadenza > ora) OPPURE in finestra grazia (scadenza > ora - 2h)
             Sfida.scadenza > fine_grazia,
         )
         .order_by(Sfida.creato_at.desc())
@@ -426,7 +425,7 @@ def _sfida_response(
     s: Sfida,
     utente_id: int,
     db: Session,
-    server_now: datetime | None = None,
+    server_now: Optional[datetime] = None,
 ) -> dict:
     """Serializza una sfida con i nuovi campi per la fase classifica."""
     ora = server_now or datetime.now(timezone.utc)
@@ -465,7 +464,7 @@ def _sfida_response(
         )
         # Aggiungi posizione
         for idx, entry in enumerate(classifica):
-            entry["posizione"] = idx + 1
+            entry["posizione_classifica"] = idx + 1
 
     return {
         "id": s.id,
