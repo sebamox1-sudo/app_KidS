@@ -541,7 +541,7 @@ def get_badge(username: str, db: Session = Depends(get_db),
     utente = _trova_utente(username, db)
     return utente.badge
 
-@router.get("/utenti/me/badge-catalogo")
+@router.get("/me/badge-catalogo")
 def get_mio_catalogo_badge(
     db: Session = Depends(get_db),
     me: Utente = Depends(get_utente_corrente),
