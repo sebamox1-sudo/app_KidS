@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr, field_validator
+from pydantic import BaseModel, EmailStr, field_validator, Field
 from typing import Optional, List
 from datetime import datetime
 import re
@@ -234,8 +234,18 @@ class SfidaRequest(BaseModel):
     durata_ore: int
     visibilita: str = "tutti"
     amici_invitati: List[str] = []
-    
 
+
+    @field_validator("tema")
+    @classmethod
+    def tema_valido(cls, v):
+        v = v.strip()
+        if len(v) < 3:
+            raise ValueError("Il tema deve avere almeno 3 caratteri")
+        if len(v) > 200:
+            raise ValueError("Il tema non può superare 200 caratteri")
+        return v
+    
     @field_validator("durata_ore")
     @classmethod
     def durata_valida(cls, v):
@@ -271,6 +281,9 @@ class SfidaResponse(BaseModel):
     creato_at: datetime
 
     model_config = {"from_attributes": True}
+
+class RichiestaVoto(BaseModel):
+    voto: float = Field(ge=0.0, le=10.0)
 
 
 # ============================================================

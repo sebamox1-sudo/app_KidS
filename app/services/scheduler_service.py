@@ -7,6 +7,7 @@ from app.models.modelli import Utente, Streak, TokenDispositivoFCM, RefreshToken
 from app.services.fcm_service import manda_notifica
 from datetime import datetime, timezone, timedelta
 import random
+from app.routers.sfide import calcola_vincitore_sfide_scadute
 
 scheduler = BackgroundScheduler()
 
@@ -143,6 +144,18 @@ def pulisci_refresh_token():
     finally:
         db.close()
 
+        
+
+def _calcola_vincitori_wrapper():
+    db = _get_db()
+    try:
+        calcola_vincitore_sfide_scadute(db)
+    except Exception as e:
+        print(f"Errore calcolo vincitori: {e}")
+    finally:
+        db.close()
+
+
 
 
 # ============================================================
@@ -179,6 +192,17 @@ def avvia_scheduler():
         id="pulizia_token",
         replace_existing=True,
     )
+
+    # JOB 5 — Calcola vincitori sfide scadute (ogni 5 min)
+    scheduler.add_job(
+        _calcola_vincitori_wrapper,
+        CronTrigger(minute="*/5"),
+        id="calcola_vincitori_sfide",
+        replace_existing=True,
+    )
+
+    scheduler.start()
+    print("✅ Scheduler avviato!")
 
     scheduler.start()
     print("✅ Scheduler avviato!")

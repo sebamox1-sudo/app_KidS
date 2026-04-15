@@ -24,28 +24,66 @@ class RichiestaVoto(BaseModel):
 
 
 # ============================================================
-# FEED SFIDE — mostra TUTTE le sfide attive tue e dei tuoi amici
+# FEED SFIDE — attive + fase classifica (2h post-scadenza per partecipanti)
 # ============================================================
-@router.get("/feed", response_model=List[SfidaResponse])
+@router.get("/feed")
 def get_sfide_feed(
     db: Session = Depends(get_db),
-    me: Utente = Depends(get_utente_corrente)
+    me: Utente = Depends(get_utente_corrente),
 ):
-    """Sfide attive degli utenti che seguo + le mie."""
+    """Sfide attive + sfide in fase classifica per chi ha partecipato."""
     ora = datetime.now(timezone.utc)
+    fine_grazia = ora - timedelta(hours=2)  # finestra di grazia
+
     seguiti_ids = [f.seguito_id for f in me.seguiti_rel]
     autori_validi = seguiti_ids + [me.id]
 
-    sfide = db.query(Sfida).filter(
-        Sfida.autore_id.in_(autori_validi),
-        Sfida.scadenza > ora
-    ).order_by(Sfida.creato_at.desc()).all()
+    # ── IDs delle sfide a cui ho partecipato (per la fase classifica) ──
+    mie_partecipazioni_ids = {
+        p.sfida_id
+        for p in db.query(PartecipazioneSfida.sfida_id).filter(
+            PartecipazioneSfida.utente_id == me.id,
+        ).all()
+    }
 
-    return [
-        _sfida_response(s, me.id, db)
-        for s in sfide
-        if _utente_puo_vedere(s, me, db)
-    ]
+    # ── Query unica: attive OR in finestra di grazia ──
+    # Eager-load per eliminare N+1
+    sfide = (
+        db.query(Sfida)
+        .options(
+            joinedload(Sfida.partecipazioni).joinedload(PartecipazioneSfida.utente),
+            joinedload(Sfida.partecipazioni).joinedload(PartecipazioneSfida.voti),
+            joinedload(Sfida.inviti).joinedload(InvitoSfida.invitato),
+            joinedload(Sfida.autore),
+            joinedload(Sfida.vincitore),
+        )
+        .filter(
+            Sfida.autore_id.in_(autori_validi),
+            # Attive (scadenza > ora) OPPURE in finestra grazia (scadenza > ora - 2h)
+            Sfida.scadenza > fine_grazia,
+        )
+        .order_by(Sfida.creato_at.desc())
+        .all()
+    )
+
+    risultati = []
+    for s in sfide:
+        if not _utente_puo_vedere(s, me, db):
+            continue
+
+        is_scaduta = ora > s.scadenza.replace(tzinfo=timezone.utc)
+        in_fase_classifica = is_scaduta and s.scadenza.replace(tzinfo=timezone.utc) > fine_grazia
+
+        # Se è in fase classifica, mostra SOLO a chi ha partecipato (o all'autore)
+        if in_fase_classifica:
+            if s.id not in mie_partecipazioni_ids and s.autore_id != me.id:
+                continue
+
+        risultati.append(
+            _sfida_response(s, me.id, db, server_now=ora)
+        )
+
+    return risultati
 
 
 
@@ -228,20 +266,20 @@ async def partecipa_sfida(
 
     if sfida.autore_id != me.id:
         manda_notifica(
-    db=db,
-    destinatario_id=sfida.autore_id,
-    titolo="Nuova partecipazione! 📸",
-    corpo=f"{me.nome} ha partecipato alla tua sfida",
-    tipo="partecipazione_sfida",
-    extra={
-        "sfida_id": sfida.id,
-        "tema": sfida.tema,
-        "mittente_id": me.id,
-        "mittente_username": me.username,
-        "mittente_nome": me.nome,
-        "mittente_foto": me.foto_profilo or "",
-    },
-)
+            db=db,
+            destinatario_id=sfida.autore_id,
+            titolo="Nuova partecipazione! 📸",
+            corpo=f"{me.nome} ha partecipato alla tua sfida",
+            tipo="partecipazione_sfida",
+            extra={
+                "sfida_id": sfida.id,
+                "tema": sfida.tema,
+                "mittente_id": me.id,
+                "mittente_username": me.username,
+                "mittente_nome": me.nome,
+                "mittente_foto": me.foto_profilo or "",
+            },
+        )
     return {"messaggio": "Partecipazione registrata"}
 
 
@@ -372,31 +410,32 @@ async def vota_partecipazione(
 # ============================================================
 
 def _utente_puo_vedere(sfida: Sfida, utente: Utente, db: Session) -> bool:
-    """
-    Regole di visibilità:
-    - L'autore vede sempre la sua sfida
-    - Sfide "selezionati": solo chi è invitato
-    - Sfide "tutti": solo chi segue l'autore (o l'autore stesso)
-    """
+    """Regole di visibilità — usa relazioni eager-loaded dove possibile."""
     if sfida.autore_id == utente.id:
         return True
 
     if sfida.visibilita == "selezionati":
-        invito = db.query(InvitoSfida).filter(
-            InvitoSfida.sfida_id == sfida.id,
-            InvitoSfida.invitato_id == utente.id,
-        ).first()
-        return invito is not None
+        # Usa la relazione già caricata con joinedload
+        return any(inv.invitato_id == utente.id for inv in sfida.inviti)
 
     # Sfida pubblica — visibile solo a chi segue l'autore
-    segue_autore = db.query(Follow).filter(
-        Follow.follower_id == utente.id,
-        Follow.seguito_id == sfida.autore_id,
-    ).first() is not None
-    return segue_autore
+    return any(f.seguito_id == sfida.autore_id for f in utente.seguiti_rel)
 
 
-def _sfida_response(s: Sfida, utente_id: int, db: Session) -> dict:
+def _sfida_response(
+    s: Sfida,
+    utente_id: int,
+    db: Session,
+    server_now: datetime | None = None,
+) -> dict:
+    """Serializza una sfida con i nuovi campi per la fase classifica."""
+    ora = server_now or datetime.now(timezone.utc)
+    scadenza_utc = s.scadenza.replace(tzinfo=timezone.utc)
+
+    is_scaduta = ora > scadenza_utc
+    fine_classifica = scadenza_utc + timedelta(hours=2)
+    in_fase_classifica = is_scaduta and ora < fine_classifica
+
     invitati = []
     if s.visibilita == "selezionati":
         invitati = [_utente_public_response(inv.invitato, db) for inv in s.inviti]
@@ -405,7 +444,6 @@ def _sfida_response(s: Sfida, utente_id: int, db: Session) -> dict:
         inv.invitato_id == utente_id for inv in s.inviti
     ) if s.visibilita == "selezionati" else False
 
-    # Prepariamo le partecipazioni da inviare nel feed
     partecipazioni_list = []
     for p in s.partecipazioni:
         partecipazioni_list.append({
@@ -414,28 +452,41 @@ def _sfida_response(s: Sfida, utente_id: int, db: Session) -> dict:
             "foto_url": p.foto_url,
             "media_voti": p.media_voti,
             "ho_votato": any(v.votante_id == utente_id for v in p.voti),
-            "creato_at": p.creato_at.isoformat() if p.creato_at else None
+            "creato_at": p.creato_at.isoformat() if p.creato_at else None,
         })
 
-    # Usiamo un dizionario invece di SfidaResponse per poter aggiungere 
-    # dinamicamente il campo partecipazioni
-
+    # ── Classifica ordinata per media_voti desc ──
+    classifica = None
+    if in_fase_classifica or is_scaduta:
+        classifica = sorted(
+            partecipazioni_list,
+            key=lambda p: p["media_voti"],
+            reverse=True,
+        )
+        # Aggiungi posizione
+        for idx, entry in enumerate(classifica):
+            entry["posizione"] = idx + 1
 
     return {
         "id": s.id,
         "autore": _utente_public_response(s.autore, db),
         "tema": s.tema,
         "durata_ore": s.durata_ore,
-        "scadenza": s.scadenza,
-        "is_scaduta": s.is_scaduta,
+        "scadenza": s.scadenza.isoformat(),
+        "is_scaduta": is_scaduta,
+        "in_fase_classifica": in_fase_classifica,
+        "fine_classifica": fine_classifica.isoformat() if in_fase_classifica else None,
         "visibilita": s.visibilita,
         "vincitore": _utente_public_response(s.vincitore, db) if s.vincitore else None,
         "num_partecipanti": len(s.partecipazioni),
         "ho_partecipato": any(p.utente_id == utente_id for p in s.partecipazioni),
         "sono_invitato": sono_invitato,
         "invitati": invitati,
-        "creato_at": s.creato_at,
-        "partecipazioni": partecipazioni_list # <-- Aggiunto!
+        "creato_at": s.creato_at.isoformat(),
+        "partecipazioni": partecipazioni_list,
+        "classifica": classifica,
+        # ── CLOCK SYNC: il client calcola il delta una sola volta ──
+        "server_now": ora.isoformat(),
     }
 
 def _aggiorna_sfide_consecutive(utente: Utente, db: Session):
