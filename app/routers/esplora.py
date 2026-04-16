@@ -1,171 +1,321 @@
+"""
+Router Esplora — Trending post/sfide/sondaggi.
+
+Regole di business (vincolanti):
+  1. PRIVACY: solo contenuti di autori con is_privato=False e is_banned=False.
+  2. TTL 48h: un contenuto sparisce dall'Esplora esattamente 48h dopo essere
+     entrato in "trend" (cioè dopo creato_at + 48h).
+  3. SONDAGGI: se l'utente loggato ha gia' votato, il sondaggio viene ESCLUSO
+     dalla risposta (non mostrato piu' in Esplora).
+  4. SFIDE: la risposta non include anteprime dei partecipanti; fornisce solo
+     i metadati necessari per mostrare il CTA "Partecipa/Scatta".
+  5. Sondaggi/Sfide scaduti (scadenza < now) vengono esclusi.
+
+Performance:
+  - Zero N+1: tutti i conteggi sono aggregati in una singola query SQL.
+  - Paginazione applicata lato DB dove possibile (post), in-memory solo per
+     il merge finale ordinato per engagement.
+"""
+from datetime import datetime, timedelta, timezone
+from typing import Any
+
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy.orm import Session
-from sqlalchemy import func, desc
-from datetime import datetime, timezone, timedelta
-from typing import List
+from sqlalchemy import and_, case, func, select
+from sqlalchemy.orm import Session, selectinload
+
 from app.database import get_db
-from app.models.modelli import Post, Sondaggio, Sfida, Like, Utente, Commento, VotoSondaggio
 from app.dependencies import get_utente_corrente
-from app.routers.auth import _utente_response
-import json
+from app.models.modelli import (
+    Commento,
+    Like,
+    PartecipazioneSfida,
+    Post,
+    Sfida,
+    Sondaggio,
+    Utente,
+    VotoSondaggio,
+)
 
 router = APIRouter(prefix="/esplora", tags=["Esplora"])
 
+# ── COSTANTI DI BUSINESS ────────────────────────────────────────────
+# TTL hard-coded dal product requirement: un contenuto resta in Esplora
+# 48h dall'ingresso in trend (= dalla creazione).
+TREND_TTL_HOURS = 48
+
+# Cap massimo per singola categoria prima del merge.
+MAX_POST = 40
+MAX_SFIDE = 20
+MAX_SONDAGGI = 20
+
+
 # ============================================================
-# TRENDING — post, sfide, sondaggi con più engagement
-# Solo contenuti da profili pubblici
+# HELPERS — serializzazione autore
+# ============================================================
+
+def _autore_pubblico(u: Utente) -> dict[str, Any]:
+    """Serializza solo i campi pubblici dell'autore (no email, no is_banned)."""
+    return {
+        "id": u.id,
+        "nome": u.nome,
+        "username": u.username,
+        "foto_profilo": u.foto_profilo,
+        "is_privato": u.is_privato,
+    }
+
+
+# ============================================================
+# ENDPOINT — TRENDING
 # ============================================================
 
 @router.get("/trending")
 def get_trending(
-    timeframe: str = Query(default="week", enum=["day", "week", "month"]),
-    skip: int = 0,
-    limit: int = 30,
+    timeframe: str = Query(default="week", pattern="^(day|week|month)$"),
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=30, ge=1, le=50),
     db: Session = Depends(get_db),
     me: Utente = Depends(get_utente_corrente),
-):
-    # Calcola la finestra temporale
+) -> list[dict[str, Any]]:
+    """
+    Restituisce i contenuti in trend filtrati per:
+      - privacy autore (solo pubblici, non bannati)
+      - TTL 48h (creato_at >= now - 48h)
+      - sondaggi non gia' votati da `me`
+      - sfide/sondaggi non scaduti
+    """
     ora = datetime.now(timezone.utc)
-    delta = {
+    # Il TTL dei trend domina SEMPRE sul timeframe richiesto.
+    # Il timeframe puo' solo restringere ulteriormente la finestra.
+    ttl_cutoff = ora - timedelta(hours=TREND_TTL_HOURS)
+    timeframe_delta = {
         "day": timedelta(days=1),
         "week": timedelta(days=7),
         "month": timedelta(days=30),
     }[timeframe]
-    da = ora - delta
+    timeframe_cutoff = ora - timeframe_delta
 
-    risultati = []
+    # Cutoff effettivo = il piu' restrittivo tra TTL e timeframe.
+    cutoff = max(ttl_cutoff, timeframe_cutoff)
 
-    # ── POST TRENDING ────────────────────────────────────────
-    # Conta like + commenti per engagement score
-    # Filtra solo autori pubblici
-    post_trending = (
-        db.query(
+    risultati: list[dict[str, Any]] = []
+    risultati.extend(_post_trending(db, cutoff))
+    risultati.extend(_sfide_trending(db, cutoff, ora))
+    risultati.extend(_sondaggi_trending(db, cutoff, ora, me.id))
+
+    # Ordina per engagement decrescente e applica paginazione in-memory
+    # (il dataset e' gia' capped via MAX_*, ordinamento su max ~80 elementi).
+    risultati.sort(key=lambda x: x["engagement"], reverse=True)
+    return risultati[skip : skip + limit]
+
+
+# ============================================================
+# QUERY — POST TRENDING (zero N+1)
+# ============================================================
+
+def _post_trending(db: Session, cutoff: datetime) -> list[dict[str, Any]]:
+    """
+    Post trending:
+      - autore pubblico e non bannato
+      - creato nelle ultime 48h
+      - con foto_principale
+      - conteggi like/commenti aggregati in-query (no N+1)
+    """
+    num_like = func.count(func.distinct(Like.id)).label("num_like")
+    num_commenti = func.count(func.distinct(Commento.id)).label("num_commenti")
+
+    stmt = (
+        select(
             Post,
-            func.count(Like.id).label("num_like"),
+            num_like,
+            num_commenti,
         )
         .join(Utente, Utente.id == Post.autore_id)
         .outerjoin(Like, Like.post_id == Post.id)
-        .filter(
-            Post.creato_at >= da,
-            Utente.is_privato == False,
-            Utente.is_banned == False,
-            Post.foto_principale != None,  # solo post con foto
+        .outerjoin(Commento, Commento.post_id == Post.id)
+        .where(
+            Post.creato_at >= cutoff,
+            Post.foto_principale.isnot(None),
+            Utente.is_privato.is_(False),
+            Utente.is_banned.is_(False),
         )
         .group_by(Post.id)
-        .order_by(desc("num_like"))
-        .limit(limit)
-        .all()
+        # engagement = like + commenti (pesi uguali, modificabile)
+        .order_by((num_like + num_commenti).desc())
+        .limit(MAX_POST)
+        # Eager-load autore per evitare N+1 in serializzazione
+        .options(selectinload(Post.autore))
     )
 
-    for post, num_like in post_trending:
-        risultati.append({
+    rows = db.execute(stmt).all()
+
+    return [
+        {
             "id": post.id,
             "tipo": "post",
             "media_url": post.foto_principale,
             "selfie_url": post.foto_selfie,
             "testo": post.testo,
-            "like_count": num_like,
-            "commenti_count": len(post.commenti),
-            "engagement": num_like + len(post.commenti),
+            "like_count": n_like,
+            "commenti_count": n_comm,
+            "engagement": n_like + n_comm,
             "creato_at": post.creato_at.isoformat(),
-            "autore": {
-                "id": post.autore.id,
-                "nome": post.autore.nome,
-                "username": post.autore.username,
-                "foto_profilo": post.autore.foto_profilo,
-                "is_privato": post.autore.is_privato,
-            },
-        })
+            "autore": _autore_pubblico(post.autore),
+        }
+        for post, n_like, n_comm in rows
+    ]
 
-    # ── SFIDE TRENDING ───────────────────────────────────────
-    sfide_trending = (
-        db.query(Sfida)
+
+# ============================================================
+# QUERY — SFIDE TRENDING (no anteprima partecipanti)
+# ============================================================
+
+def _sfide_trending(
+    db: Session, cutoff: datetime, ora: datetime
+) -> list[dict[str, Any]]:
+    """
+    Sfide trending:
+      - autore pubblico e non bannato
+      - visibilita = 'tutti' (solo sfide pubbliche)
+      - creata nelle ultime 48h
+      - scadenza futura (ancora attiva)
+      - NON include foto partecipanti (solo CTA partecipa/scatta)
+    """
+    num_partecipanti = func.count(PartecipazioneSfida.id).label("num_partecipanti")
+
+    stmt = (
+        select(Sfida, num_partecipanti)
         .join(Utente, Utente.id == Sfida.autore_id)
-        .filter(
-            Sfida.creato_at >= da,
-            Utente.is_privato == False,
-            Utente.is_banned == False,
+        .outerjoin(
+            PartecipazioneSfida,
+            PartecipazioneSfida.sfida_id == Sfida.id,
         )
-        .order_by(desc(Sfida.creato_at))
-        .limit(10)
-        .all()
+        .where(
+            Sfida.creato_at >= cutoff,
+            Sfida.scadenza > ora,             # non scaduta
+            Sfida.visibilita == "tutti",      # solo sfide pubbliche
+            Utente.is_privato.is_(False),
+            Utente.is_banned.is_(False),
+        )
+        .group_by(Sfida.id)
+        .order_by(num_partecipanti.desc(), Sfida.creato_at.desc())
+        .limit(MAX_SFIDE)
+        .options(selectinload(Sfida.autore))
     )
 
-    for sfida in sfide_trending:
-        num_partecipanti = len(sfida.partecipazioni)
-        risultati.append({
+    rows = db.execute(stmt).all()
+
+    return [
+        {
             "id": sfida.id,
             "tipo": "sfida",
-            "media_url": sfida.partecipazioni[0].foto_url
-                if sfida.partecipazioni else None,
+            # REGOLA: NO anteprime partecipanti in Esplora
+            "media_url": None,
             "testo": sfida.tema,
-            "like_count": 0,
-            "engagement": num_partecipanti * 2,
-            "num_partecipanti": num_partecipanti,
+            "tema": sfida.tema,
+            "durata_ore": sfida.durata_ore,
             "scadenza": sfida.scadenza.isoformat(),
-            "is_scaduta": sfida.is_scaduta,
+            "is_scaduta": False,              # garantito da WHERE
+            "is_pubblica": True,              # garantito da WHERE
+            "num_partecipanti": n_part,
+            "engagement": n_part * 2,
             "creato_at": sfida.creato_at.isoformat(),
-            "autore": {
-                "id": sfida.autore.id,
-                "nome": sfida.autore.nome,
-                "username": sfida.autore.username,
-                "foto_profilo": sfida.autore.foto_profilo,
-                "is_privato": sfida.autore.is_privato,
-            },
-        })
+            # CTA frontend: mostra "Partecipa / Scatta"
+            "azione": "partecipa",
+            "autore": _autore_pubblico(sfida.autore),
+        }
+        for sfida, n_part in rows
+    ]
 
-    # ── SONDAGGI TRENDING ────────────────────────────────────
-    sondaggi_trending = (
-        db.query(Sondaggio)
-        .join(Utente, Utente.id == Sondaggio.autore_id)
-        .filter(
-            Sondaggio.creato_at >= da,
-            Utente.is_privato == False,
-            Utente.is_banned == False,
-        )
-        .order_by(desc(Sondaggio.creato_at))
-        .limit(10)
-        .all()
+
+# ============================================================
+# QUERY — SONDAGGI TRENDING (esclude votati da `me`)
+# ============================================================
+
+def _sondaggi_trending(
+    db: Session, cutoff: datetime, ora: datetime, utente_id: int
+) -> list[dict[str, Any]]:
+    """
+    Sondaggi trending:
+      - autore pubblico e non bannato
+      - creato nelle ultime 48h
+      - scadenza futura
+      - ESCLUDE sondaggi gia' votati da `utente_id`
+
+    Implementazione:
+      - Sub-query: id sondaggi gia' votati dall'utente corrente -> NOT IN.
+      - Conteggi voti per opzione: caricati via JSON aggregation o
+        parse Python dopo una singola query group-by.
+    """
+    # ── 1) Sub-query: id sondaggi votati dall'utente ────────────────
+    sondaggi_votati_stmt = select(VotoSondaggio.sondaggio_id).where(
+        VotoSondaggio.utente_id == utente_id
     )
 
-    for sondaggio in sondaggi_trending:
-        opzioni = json.loads(sondaggio.opzioni)
-        voti = db.query(VotoSondaggio).filter(
-            VotoSondaggio.sondaggio_id == sondaggio.id
-        ).all()
+    # ── 2) Query principale con totale voti aggregato ───────────────
+    totale_voti = func.count(VotoSondaggio.id).label("totale_voti")
 
-        voti_per_opzione = [
-            len([v for v in voti if v.opzione_index == i])
-            for i in range(len(opzioni))
-        ]
-
-        # Controlla se l'utente corrente ha già votato
-        mio_voto = next(
-            (v for v in voti if v.utente_id == me.id), None
+    stmt = (
+        select(Sondaggio, totale_voti)
+        .join(Utente, Utente.id == Sondaggio.autore_id)
+        .outerjoin(VotoSondaggio, VotoSondaggio.sondaggio_id == Sondaggio.id)
+        .where(
+            Sondaggio.creato_at >= cutoff,
+            Sondaggio.scadenza > ora,                    # non scaduto
+            Sondaggio.id.notin_(sondaggi_votati_stmt),   # non votato da me
+            Utente.is_privato.is_(False),
+            Utente.is_banned.is_(False),
         )
+        .group_by(Sondaggio.id)
+        .order_by(totale_voti.desc(), Sondaggio.creato_at.desc())
+        .limit(MAX_SONDAGGI)
+        .options(selectinload(Sondaggio.autore))
+    )
+
+    rows = db.execute(stmt).all()
+    if not rows:
+        return []
+
+    # ── 3) Batch: conteggio voti per opzione in UNA sola query ──────
+    sondaggio_ids = [s.id for s, _ in rows]
+    conteggi_stmt = (
+        select(
+            VotoSondaggio.sondaggio_id,
+            VotoSondaggio.opzione_index,
+            func.count(VotoSondaggio.id).label("conteggio"),
+        )
+        .where(VotoSondaggio.sondaggio_id.in_(sondaggio_ids))
+        .group_by(VotoSondaggio.sondaggio_id, VotoSondaggio.opzione_index)
+    )
+    # Mappa: {sondaggio_id: {opzione_index: conteggio}}
+    mappa_conteggi: dict[int, dict[int, int]] = {}
+    for sid, opt_idx, cnt in db.execute(conteggi_stmt).all():
+        mappa_conteggi.setdefault(sid, {})[opt_idx] = cnt
+
+    # ── 4) Serializzazione ──────────────────────────────────────────
+    import json
+    risultati = []
+    for sondaggio, totale in rows:
+        try:
+            opzioni = json.loads(sondaggio.opzioni)
+        except (json.JSONDecodeError, TypeError):
+            continue  # skip sondaggio malformato
+
+        conteggi_ops = mappa_conteggi.get(sondaggio.id, {})
+        voti_per_opzione = [conteggi_ops.get(i, 0) for i in range(len(opzioni))]
 
         risultati.append({
             "id": sondaggio.id,
             "tipo": "sondaggio",
             "testo": sondaggio.domanda,
-            "opzioni": opzioni,                    # ← lista opzioni
-            "voti_per_opzione": voti_per_opzione,  # ← voti per ogni opzione
-            "totale_voti": len(voti),
-            "ho_votato": mio_voto is not None,     # ← già votato?
-            "mia_opzione": mio_voto.opzione_index if mio_voto else None,
-            "engagement": len(voti),
+            "domanda": sondaggio.domanda,
+            "opzioni": opzioni,
+            "voti_per_opzione": voti_per_opzione,
+            "totale_voti": totale,
+            "ho_votato": False,              # garantito da WHERE NOT IN
+            "mia_opzione": None,
+            "scadenza": sondaggio.scadenza.isoformat(),
+            "engagement": totale,
             "creato_at": sondaggio.creato_at.isoformat(),
-            "autore": {
-                "id": sondaggio.autore.id,
-                "nome": sondaggio.autore.nome,
-                "username": sondaggio.autore.username,
-                "foto_profilo": sondaggio.autore.foto_profilo,
-                "is_privato": sondaggio.autore.is_privato,
-            },
+            "autore": _autore_pubblico(sondaggio.autore),
         })
-
-    # ── ORDINA PER ENGAGEMENT ────────────────────────────────
-    risultati.sort(key=lambda x: x["engagement"], reverse=True)
-
-    # ── PAGINAZIONE ──────────────────────────────────────────
-    return risultati[skip: skip + limit]
+    return risultati
