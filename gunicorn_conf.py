@@ -61,6 +61,12 @@ preload_app = False
 # ──────────────────────────────────────────────────────────────
 def when_ready(server):
     server.log.info(f"🚀 Gunicorn ready — {workers} workers")
+    try:
+        from app.services.scheduler_service import avvia_scheduler
+        avvia_scheduler()
+        server.log.info("🚀 Scheduler avviato nel master")
+    except Exception as e:
+        server.log.error(f"⚠️  Scheduler non avviato: {e}")
 
 def worker_int(worker):
     worker.log.info(f"⚠️  Worker {worker.pid} interrupted")

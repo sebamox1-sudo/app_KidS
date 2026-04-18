@@ -26,7 +26,6 @@ limiter = Limiter(key_func=get_remote_address)
 # ← lifespan gestisce avvio e spegnimento
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    avvia_scheduler()
     yield
     # Qui puoi aggiungere cleanup se serve
 
