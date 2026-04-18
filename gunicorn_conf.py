@@ -20,7 +20,7 @@ bind = f"0.0.0.0:{os.getenv('PORT', '8000')}"
 # Su Railway Pro (2 vCPU):   4 workers
 # Su Railway 4 vCPU:         8 workers
 # ──────────────────────────────────────────────────────────────
-workers = int(os.getenv("WEB_CONCURRENCY", multiprocessing.cpu_count() * 2 + 1))
+workers = int(os.getenv("WEB_CONCURRENCY", "2"))
 worker_class = "uvicorn.workers.UvicornWorker"
 
 # ──────────────────────────────────────────────────────────────
