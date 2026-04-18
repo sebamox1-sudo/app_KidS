@@ -101,3 +101,37 @@ def manda_notifica_safe(destinatario_id: int, titolo: str, corpo: str, **kwargs)
         manda_notifica(db, destinatario_id, titolo, corpo, **kwargs)
     finally:
         db.close()
+
+def fan_out_follower_fcm(autore_id: int, post_id: int):
+    """Manda FCM a tutti i follower dell'autore. 
+    Chiamato da BackgroundTasks: apre una sessione DB propria perché 
+    quella della request è già chiusa quando il task parte."""
+    from app.database import SessionLocal
+    from app.models.modelli import Utente
+    
+    db = SessionLocal()
+    try:
+        autore = db.query(Utente).filter(Utente.id == autore_id).first()
+        if not autore:
+            return
+        
+        follower_ids = [f.follower_id for f in autore.follower_rel]
+        for fid in follower_ids:
+            try:
+                manda_notifica(
+                    db, fid,
+                    "📸 Nuovo post!",
+                    f"{autore.nome} ha pubblicato",
+                    tipo="post",
+                    extra={
+                        "post_id": post_id,
+                        "mittente_id": autore_id,
+                        "mittente_username": autore.username,
+                        "mittente_nome": autore.nome,
+                        "mittente_foto": autore.foto_profilo or "",
+                    },
+                )
+            except Exception:
+                continue  # non bloccare gli altri destinatari
+    finally:
+        db.close()

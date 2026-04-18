@@ -19,7 +19,7 @@ from app.services.fcm_service import manda_notifica, manda_notifica_safe
 from app.routers.blocco_segnalazioni import get_ids_bloccati
 from app.routers.ws_commenti import broadcast_commento
 from app.services.cache_service import cache_get_or_set, cache_invalidate
-from app.services.tasks import notifica_follower_nuovo_post
+
 
 limiter = Limiter(key_func=get_remote_address)
 
@@ -63,7 +63,7 @@ async def pubblica_post_testuale(
     db.commit()
     db.refresh(post)
 
-    notifica_follower_nuovo_post.delay(autore_id=me.id, post_id=post.id)
+   
 
     cache_invalidate(f"profilo:pub:{me.username}")
     cache_invalidate("trending:day", "trending:week", "trending:month")
@@ -129,7 +129,7 @@ async def pubblica_post(
     db.commit()
     db.refresh(post)
 
-    notifica_follower_nuovo_post.delay(autore_id=me.id, post_id=post.id)
+   
 
     # ── INVALIDAZIONE CACHE ──────────────────────────────────
     # Il profilo dell'autore mostra "ultimi_post" → va rinfrescato
