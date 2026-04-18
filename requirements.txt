@@ -17,3 +17,5 @@ slowapi==0.1.9
 supabase
 firebase-admin
 apscheduler
+redis>=5.0.8
+gunicorn>=23.0.0

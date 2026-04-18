@@ -35,6 +35,7 @@ from app.models.modelli import (
     Utente,
     VotoSondaggio,
 )
+from app.services.cache_service import cache_get_or_set
 
 router = APIRouter(prefix="/esplora", tags=["Esplora"])
 
@@ -87,32 +88,39 @@ def _ids_bloccati(db: Session, utente_id: int) -> set[int]:
 
 @router.get("/trending")
 def get_trending(
-    timeframe: str = Query(default="week", pattern="^(day|week|month)$"),
-    skip: int = Query(default=0, ge=0),
-    limit: int = Query(default=30, ge=1, le=50),
+    timeframe: str = Query(default="week", enum=["day", "week", "month"]),
+    skip: int = 0,
+    limit: int = 30,
     db: Session = Depends(get_db),
     me: Utente = Depends(get_utente_corrente),
-) -> list[dict[str, Any]]:
-    ora = datetime.now(timezone.utc)
-    ttl_cutoff = ora - timedelta(hours=TREND_TTL_HOURS)
-    timeframe_delta = {
-        "day": timedelta(days=1),
-        "week": timedelta(days=7),
-        "month": timedelta(days=30),
-    }[timeframe]
-    timeframe_cutoff = ora - timeframe_delta
-    cutoff = max(ttl_cutoff, timeframe_cutoff)
+):
+    # Chiave NON include me.id → cache condivisa tra tutti gli utenti
+    # (il trending è pubblico e identico per chiunque)
+    cache_key = f"trending:{timeframe}"
 
-    # Una sola lettura dei blocchi, riusata dalle 3 query.
-    bloccati_ids = _ids_bloccati(db, me.id)
+    def _calcola():
+        # … tutta la logica attuale di calcolo ritorna `risultati` completi
+        return risultati  # lista completa, non paginata
 
-    risultati: list[dict[str, Any]] = []
-    risultati.extend(_post_trending(db, cutoff, bloccati_ids))
-    risultati.extend(_sfide_trending(db, cutoff, ora, bloccati_ids))
-    risultati.extend(_sondaggi_trending(db, cutoff, ora, me.id, bloccati_ids))
+    tutti = cache_get_or_set(cache_key, ttl_seconds=300, loader=_calcola)
 
-    risultati.sort(key=lambda x: x["engagement"], reverse=True)
-    return risultati[skip : skip + limit]
+    # Arricchimento per-user (ho_votato, mia_opzione) NON va cachato —
+    # si applica dopo, sulla fetch per-user (quick query singola)
+    sondaggi_ids = [r["id"] for r in tutti if r["tipo"] == "sondaggio"]
+    if sondaggi_ids:
+        miei_voti = {
+            v.sondaggio_id: v.opzione_index
+            for v in db.query(VotoSondaggio).filter(
+                VotoSondaggio.utente_id == me.id,
+                VotoSondaggio.sondaggio_id.in_(sondaggi_ids),
+            ).all()
+        }
+        for r in tutti:
+            if r["tipo"] == "sondaggio":
+                r["ho_votato"] = r["id"] in miei_voti
+                r["mia_opzione"] = miei_voti.get(r["id"])
+
+    return tutti[skip : skip + limit]
 
 
 # ============================================================

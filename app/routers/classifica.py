@@ -5,6 +5,7 @@ from typing import List
 from app.database import get_db
 from app.models.modelli import Utente, Streak
 from app.dependencies import get_utente_corrente
+from app.services.cache_service import cache_get_or_set
 
 router = APIRouter(prefix="/classifica", tags=["Classifica"])
 
@@ -29,27 +30,25 @@ def _utente_classifica(u: Utente) -> dict:
         "streak_giorni": streak_val,
     }
 
+# classifica.py
 @router.get("/")
-def get_classifica(
-    limit: int = 50,
-    db: Session = Depends(get_db),
-    me: Utente = Depends(get_utente_corrente)
-):
-    utenti = db.query(Utente).outerjoin(Streak).order_by(
-        case((Streak.giorni.isnot(None), Streak.giorni), else_=0).desc(),
-        Utente.id.asc()
-    ).limit(limit).all()
+def get_classifica(limit: int = 50, db: Session = Depends(get_db), me: Utente = Depends(get_utente_corrente)):
+    cache_key = f"classifica:top:{limit}"
 
-    risultato = []
-    for i, u in enumerate(utenti):
-        dati = _utente_classifica(u)
-        risultato.append({
-            "posizione": i + 1,
-            "utente": dati,
-            "streak": dati["streak_giorni"],
-            "sono_io": u.id == me.id,
-        })
-    return risultato
+    def _calcola():
+        utenti = db.query(Utente).outerjoin(Streak).order_by(
+            case((Streak.giorni.isnot(None), Streak.giorni), else_=0).desc(),
+            Utente.id.asc()
+        ).limit(limit).all()
+        return [_utente_classifica(u) for u in utenti]
+
+    base = cache_get_or_set(cache_key, ttl_seconds=60, loader=_calcola)
+
+    # `sono_io` è per-user → applicato dopo
+    return [
+        {"posizione": i + 1, "utente": u, "streak": u["streak_giorni"], "sono_io": u["id"] == me.id}
+        for i, u in enumerate(base)
+    ]
 
 
 @router.get("/amici")

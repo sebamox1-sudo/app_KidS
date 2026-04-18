@@ -13,11 +13,13 @@ from datetime import datetime, timezone, timedelta
 
 from slowapi import Limiter
 from slowapi.util import get_remote_address
-from fastapi import Request
+from fastapi import Request, BackgroundTasks
 from app.services.storage_service import carica_e_comprimi_foto
-from app.services.fcm_service import manda_notifica
+from app.services.fcm_service import manda_notifica, manda_notifica_safe
 from app.routers.blocco_segnalazioni import get_ids_bloccati
 from app.routers.ws_commenti import broadcast_commento
+from app.services.cache_service import cache_get_or_set, cache_invalidate
+from app.services.tasks import notifica_follower_nuovo_post
 
 limiter = Limiter(key_func=get_remote_address)
 
@@ -60,6 +62,12 @@ async def pubblica_post_testuale(
 
     db.commit()
     db.refresh(post)
+
+    notifica_follower_nuovo_post.delay(autore_id=me.id, post_id=post.id)
+
+    cache_invalidate(f"profilo:pub:{me.username}")
+    cache_invalidate("trending:day", "trending:week", "trending:month")
+    
     nuovi_badge = verifica_badge(me, db)
     risposta = _post_response(post, me.id, db)
     return {
@@ -120,6 +128,17 @@ async def pubblica_post(
 
     db.commit()
     db.refresh(post)
+
+    notifica_follower_nuovo_post.delay(autore_id=me.id, post_id=post.id)
+
+    # ── INVALIDAZIONE CACHE ──────────────────────────────────
+    # Il profilo dell'autore mostra "ultimi_post" → va rinfrescato
+    cache_invalidate(f"profilo:pub:{me.username}")
+    # Un nuovo post può entrare nel trending → invalida anche quello
+    cache_invalidate("trending:day", "trending:week", "trending:month")
+
+    # Verifica badge e ottieni quelli nuovi (codice esistente)
+    nuovi_badge = await verifica_badge(me, db)
 
     # Verifica badge e ottieni quelli nuovi
     nuovi_badge =  verifica_badge(me, db)
@@ -388,6 +407,7 @@ def get_commenti(post_id: int, db: Session = Depends(get_db),
 async def aggiungi_commento(
     request: Request,
     post_id: int, dati: CommentoRequest,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),                   
     me: Utente = Depends(get_utente_corrente)):
     post = db.query(Post).filter(Post.id == post_id).first()
@@ -473,6 +493,22 @@ async def aggiungi_commento(
     
     nuovi_badge = verifica_badge(me, db)
     resp = _commento_response(commento, db)
+
+    background_tasks.add_task(
+        manda_notifica_safe,
+        destinatario_id=post.autore_id,
+        titolo="💬 Nuovo commento!",
+        corpo=f"{me.nome}: {dati.testo[:50]}",
+        tipo="commento",
+        extra={
+            "post_id": post.id,
+            "mittente_username": me.username,
+            "mittente_nome": me.nome,
+            "mittente_id": me.id,
+            "mittente_foto": me.foto_profilo or "",
+        },
+    )
+    
     return {**resp.dict(), "nuovi_badge": nuovi_badge}
 
 
@@ -505,6 +541,10 @@ def elimina_post(post_id: int, db: Session = Depends(get_db),
 
     db.delete(post)
     db.commit()
+
+    cache_invalidate(f"profilo:pub:{me.username}")
+    cache_invalidate("trending:day", "trending:week", "trending:month")
+    
     return {"messaggio": "Post eliminato"}
 
 # ============================================================

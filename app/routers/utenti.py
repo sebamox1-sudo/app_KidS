@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 from app.database import get_db
-from app.models.modelli import Utente, Follow, BadgeUtente, Notifica, RichiestaFollow, Post
+from app.models.modelli import Utente, Follow, BadgeUtente, Notifica, RichiestaFollow, Post, Like, Commento
 from app.schemas.schemi import UtenteResponse, UtentePublicResponse, AggiornaProfilo, BadgeResponse
 from app.dependencies import get_utente_corrente
 from app.routers.auth import _utente_response, _utente_public_response
@@ -14,6 +15,8 @@ from fastapi import Request
 from app.services.storage_service import carica_e_comprimi_foto
 from app.services.fcm_service import manda_notifica
 from app.services.badge_service import verifica_badge, get_catalogo_badge
+from app.services.cache_service import cache_get_or_set, cache_invalidate
+
 
 limiter = Limiter(key_func=get_remote_address)
 
@@ -205,35 +208,77 @@ def get_amici_di_utente(
 
 
 @router.get("/{username}", response_model=UtentePublicResponse)
-def get_profilo(username: str, db: Session = Depends(get_db),
-                me: Utente = Depends(get_utente_corrente)):
-    # 1. Trova l'utente
-    utente = _trova_utente(username, db)
-    # 2. Ottieni i dati base (nome, bio, etc.) chiamando la tua funzione esistente
-    dati_utente = _utente_public_response(utente, db)
-    # Se _utente_response restituisce un oggetto Pydantic, lo trasformiamo in dizionario
-    res = dati_utente.model_dump()
-    # 3. ✨ IL PEZZO MANCANTE: Recupera gli ultimi post di questo utente
-    # Ordiniamo per data decrescente (i più nuovi in alto)
-    post_db = db.query(Post).filter(
-        Post.autore_id == utente.id # Assicurati che il campo si chiami 'utente_id' o 'autore_id'
-    ).order_by(Post.creato_at.desc()).limit(21).all()
-    # 4. Formattiamo i post come si aspetta Flutter
-    res["ultimi_post"] = [
-        {
-            "id": p.id,
-            "foto_principale": p.foto_principale,
-            "foto_selfie": p.foto_selfie,
-            "testo" : p.testo,
-            "creato_at": p.creato_at.isoformat() if p.creato_at else None,
-            # ✨ STATISTICHE PER FLUTTER
-            "num_like" : len(p.like), # Conta quanti like ci sono
-            "media_voti" : p.media_voti if p.media_voti is not None else 0.0,
-            "num_commenti" : len(p.commenti),
-            # Ti serve anche sapere se TU (utente loggato) hai messo like a questo post
-            "is_liked": any(l.utente_id == me.id for l in p.like)
-        }  for p in post_db
-    ]
+def get_profilo(
+    username: str,
+    db: Session = Depends(get_db),
+    me: Utente = Depends(get_utente_corrente),
+):
+    username_pulito = username.lstrip("@").lower()
+    cache_key = f"profilo:pub:{username_pulito}"
+
+    # ── LOADER: solo dati pubblici, cachati 120s ─────────────
+    def _calcola():
+        utente = _trova_utente(username, db)
+        res = _utente_public_response(utente, db).model_dump()
+
+        # Ultimi 21 post dell'utente
+        post_db = (
+            db.query(Post)
+            .filter(Post.autore_id == utente.id)
+            .order_by(Post.creato_at.desc())
+            .limit(21)
+            .all()
+        )
+
+        # Batch: contatori like/commenti in 2 query invece di N+N
+        post_ids = [p.id for p in post_db]
+        if post_ids:
+            like_counts = dict(
+                db.query(Like.post_id, func.count(Like.id))
+                .filter(Like.post_id.in_(post_ids))
+                .group_by(Like.post_id)
+                .all()
+            )
+            commenti_counts = dict(
+                db.query(Commento.post_id, func.count(Commento.id))
+                .filter(Commento.post_id.in_(post_ids))
+                .group_by(Commento.post_id)
+                .all()
+            )
+        else:
+            like_counts, commenti_counts = {}, {}
+
+        res["ultimi_post"] = [
+            {
+                "id": p.id,
+                "foto_principale": p.foto_principale,
+                "foto_selfie": p.foto_selfie,
+                "testo": p.testo,
+                "creato_at": p.creato_at.isoformat() if p.creato_at else None,
+                "num_like": like_counts.get(p.id, 0),
+                "media_voti": p.media_voti if p.media_voti is not None else 0.0,
+                "num_commenti": commenti_counts.get(p.id, 0),
+            }
+            for p in post_db
+        ]
+        return res
+
+    # ── CACHE HIT/MISS ───────────────────────────────────────
+    res = cache_get_or_set(cache_key, ttl_seconds=120, loader=_calcola)
+
+    # ── ARRICCHIMENTO PER-USER (NON cachato) ─────────────────
+    # `is_liked` dipende da `me.id` → non può stare nel loader
+    post_ids = [p["id"] for p in res["ultimi_post"]]
+    if post_ids:
+        miei_like = {
+            row.post_id
+            for row in db.query(Like.post_id)
+            .filter(Like.utente_id == me.id, Like.post_id.in_(post_ids))
+            .all()
+        }
+        for p in res["ultimi_post"]:
+            p["is_liked"] = p["id"] in miei_like
+    
     return res
 
 # ============================================================
@@ -245,13 +290,16 @@ def elimina_account(
     db: Session = Depends(get_db),
     me: Utente = Depends(get_utente_corrente)
 ):
-    """
-    Elimina permanentemente l'account e tutti i dati associati.
-    Grazie a cascade="all, delete" nel modello, SQLAlchemy
-    cancella automaticamente post, like, commenti, follow, ecc.
-    """
+    # ── CATTURA USERNAME PRIMA DEL DELETE ────────────────────
+    # Dopo db.delete(me) l'oggetto non è più accessibile in modo affidabile
+    username_da_invalidare = me.username
+
     db.delete(me)
     db.commit()
+
+    # ── INVALIDA CACHE ───────────────────────────────────────
+    cache_invalidate(f"profilo:pub:{username_da_invalidare}")
+
     return {"messaggio": "Account eliminato definitivamente"}
 
 # ============================================================
@@ -261,6 +309,8 @@ def elimina_account(
 @router.patch("/me/profilo", response_model=UtenteResponse)
 def aggiorna_profilo(dati: AggiornaProfilo, db: Session = Depends(get_db),
                      me: Utente = Depends(get_utente_corrente)):
+    username_vecchio = me.username
+
     if dati.nome is not None:
         me.nome = dati.nome
     if dati.username is not None:
@@ -281,6 +331,12 @@ def aggiorna_profilo(dati: AggiornaProfilo, db: Session = Depends(get_db),
         me.onboarding_completato = dati.onboarding_completato
     db.commit()
     db.refresh(me)
+    # ── INVALIDAZIONE CACHE — SEMPRE DOPO IL COMMIT ──────────
+    # Se l'username è cambiato, invalida sia il vecchio che il nuovo
+    chiavi_da_invalidare = [f"profilo:pub:{username_vecchio}"]
+    if me.username != username_vecchio:
+        chiavi_da_invalidare.append(f"profilo:pub:{me.username}")
+    cache_invalidate(*chiavi_da_invalidare)
     return _utente_response(me, db)
 
 
@@ -306,6 +362,8 @@ async def upload_foto_profilo(
     me.foto_profilo = url_pubblico
     db.commit()
     db.refresh(me)
+     
+    cache_invalidate(f"profilo:pub:{me.username}")
     
     return _utente_response(me, db)
 

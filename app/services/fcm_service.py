@@ -4,6 +4,7 @@ import firebase_admin
 from firebase_admin import credentials, messaging
 from sqlalchemy.orm import Session
 from app.models.modelli import TokenDispositivoFCM
+from app.database import SessionLocal
 
 # Inizializza Firebase Admin una sola volta
 _inizializzato = False
@@ -93,3 +94,10 @@ def manda_notifica(
         db.commit()
     except Exception as e:
         print(f"Errore FCM: {e}")
+
+def manda_notifica_safe(destinatario_id: int, titolo: str, corpo: str, **kwargs):
+    db = SessionLocal()
+    try:
+        manda_notifica(db, destinatario_id, titolo, corpo, **kwargs)
+    finally:
+        db.close()
